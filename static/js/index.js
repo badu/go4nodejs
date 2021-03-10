@@ -294,21 +294,67 @@ const defaultConfig = {
     }
     // === end of config ===
     // === utils ===
-    /**
-     * Converts various color input formats to an {r:0,g:0,b:0} object.
-     *
-     * @param {string} color The string representation of a color
-     * @example
-     * colorToRgb('#000');
-     * @example
-     * colorToRgb('#000000');
-     * @example
-     * colorToRgb('rgb(0,0,0)');
-     * @example
-     * colorToRgb('rgba(0,0,0)');
-     *
-     * @return {{r: number, g: number, b: number, [a]: number}|null}
-     */
+
+
+// Function to perform a better "data-trim" on code snippets
+// Will slice an indentation amount on each line of the snippet (amount based on the line having the lowest indentation length)
+function betterTrim(snippetEl) {
+    // Helper functions
+    function trimLeft(val) {
+        // Adapted from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Trim#Polyfill
+        return val.replace(/^[\s\uFEFF\xA0]+/g, '');
+    }
+
+    function trimLineBreaks(input) {
+        var lines = input.split('\n');
+        // Trim line-breaks from the beginning
+        for (var i = 0; i < lines.length; i++) {
+            if (lines[i].trim() === '') {
+                lines.splice(i--, 1);
+            } else break;
+        }
+        // Trim line-breaks from the end
+        for (var i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].trim() === '') {
+                lines.splice(i, 1);
+            } else break;
+        }
+        return lines.join('\n');
+    }
+    // Main function for betterTrim()
+    return (function(snippetEl) {
+        var content = trimLineBreaks(snippetEl.innerHTML);
+        var lines = content.split('\n');
+        // Calculate the minimum amount to remove on each line start of the snippet (can be 0)
+        var pad = lines.reduce(function(acc, line) {
+            if (line.length > 0 && trimLeft(line).length > 0 && acc > line.length - trimLeft(line).length) {
+                return line.length - trimLeft(line).length;
+            }
+            return acc;
+        }, Number.POSITIVE_INFINITY);
+        // Slice each line with this amount
+        return lines.map(function(line, index) {
+                return line.slice(pad);
+            })
+            .join('\n');
+    })(snippetEl);
+}
+
+/**
+ * Converts various color input formats to an {r:0,g:0,b:0} object.
+ *
+ * @param {string} color The string representation of a color
+ * @example
+ * colorToRgb('#000');
+ * @example
+ * colorToRgb('#000000');
+ * @example
+ * colorToRgb('rgb(0,0,0)');
+ * @example
+ * colorToRgb('rgba(0,0,0)');
+ *
+ * @return {{r: number, g: number, b: number, [a]: number}|null}
+ */
 const colorToRgb = (color) => {
     let hex3 = color.match(/^#([0-9a-f]{3})$/i);
     if (hex3 && hex3[1]) {
@@ -609,8 +655,8 @@ const STATE_FOCUS = 'focus';
 const STATE_BLUR = 'blur';
 
 class Focus {
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         this.onRevealPointerDown = this.onRevealPointerDown.bind(this);
         this.onDocumentPointerDown = this.onDocumentPointerDown.bind(this);
     }
@@ -628,19 +674,19 @@ class Focus {
     }
 
     bind() {
-        if (this.Reveal.getConfig().embedded) {
-            this.Reveal.getRevealElement().addEventListener('pointerdown', this.onRevealPointerDown, false);
+        if (this.deck.config.embedded) {
+            this.deck.deckElement.addEventListener('pointerdown', this.onRevealPointerDown, false);
         }
     }
 
     unbind() {
-        this.Reveal.getRevealElement().removeEventListener('pointerdown', this.onRevealPointerDown, false);
+        this.deck.deckElement.removeEventListener('pointerdown', this.onRevealPointerDown, false);
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, false);
     }
 
     focus() {
         if (this.state !== STATE_FOCUS) {
-            this.Reveal.getRevealElement().classList.add('focused');
+            this.deck.deckElement.classList.add('focused');
             document.addEventListener('pointerdown', this.onDocumentPointerDown, false);
         }
         this.state = STATE_FOCUS;
@@ -648,7 +694,7 @@ class Focus {
 
     blur() {
         if (this.state !== STATE_BLUR) {
-            this.Reveal.getRevealElement().classList.remove('focused');
+            this.deck.deckElement.classList.remove('focused');
             document.removeEventListener('pointerdown', this.onDocumentPointerDown, false);
         }
         this.state = STATE_BLUR;
@@ -663,8 +709,12 @@ class Focus {
     }
 
     onDocumentPointerDown(event) {
+        if (event === undefined) {
+            console.error('event is undefined, but it should NOT be', new Error().stack);
+            return
+        }
         let revealElement = closest(event.target, '.reveal');
-        if (!revealElement || revealElement !== this.Reveal.getRevealElement()) {
+        if (!revealElement || revealElement !== this.deck.deckElement) {
             this.blur();
         }
     }
@@ -709,8 +759,8 @@ const supportsZoom = 'zoom' in testElement.style && !isMobile &&
  * revealed/animated incrementally.
  */
 class Fragments {
-    constructor(Reveal) {
-            this.Reveal = Reveal;
+    constructor(deck) {
+            this.deck = deck;
         }
         /**
          * Called when the  config is updated.
@@ -728,7 +778,7 @@ class Fragments {
      * visible rather than stepped through.
      */
     disable() {
-        queryAll(this.Reveal.getSlidesElement(), '.fragment').forEach(element => {
+        queryAll(this.deck.dom.slides, '.fragment').forEach(element => {
             element.classList.add('visible');
             element.classList.remove('current-fragment');
         });
@@ -739,7 +789,7 @@ class Fragments {
      * previously been disabled.
      */
     enable() {
-        queryAll(this.Reveal.getSlidesElement(), '.fragment').forEach(element => {
+        queryAll(this.deck.dom.slides, '.fragment').forEach(element => {
             element.classList.remove('visible');
             element.classList.remove('current-fragment');
         });
@@ -752,8 +802,8 @@ class Fragments {
      * @return {{prev: boolean, next: boolean}}
      */
     availableRoutes() {
-        let currentSlide = this.Reveal.getCurrentSlide();
-        if (currentSlide && this.Reveal.getConfig().fragments) {
+        let currentSlide = this.deck.currentSlide;
+        if (currentSlide && this.deck.config.fragments) {
             let fragments = currentSlide.querySelectorAll('.fragment:not(.disabled)');
             let hiddenFragments = currentSlide.querySelectorAll('.fragment:not(.disabled):not(.visible)');
             return {
@@ -830,7 +880,7 @@ class Fragments {
      * presentation.
      */
     sortAll() {
-        this.Reveal.getHorizontalSlides().forEach(horizontalSlide => {
+        this.deck.getHorizontalSlides().forEach(horizontalSlide => {
             let verticalSlides = queryAll(horizontalSlide, 'section');
             verticalSlides.forEach((verticalSlide, y) => {
                 this.sort(verticalSlide.querySelectorAll('.fragment'));
@@ -854,8 +904,8 @@ class Fragments {
             shown: [],
             hidden: []
         };
-        let currentSlide = this.Reveal.getCurrentSlide();
-        if (currentSlide && this.Reveal.getConfig().fragments) {
+        let currentSlide = this.deck.currentSlide;
+        if (currentSlide && this.deck.config.fragments) {
             fragments = fragments || this.sort(currentSlide.querySelectorAll('.fragment'));
             if (fragments.length) {
                 let maxIndex = 0;
@@ -877,13 +927,13 @@ class Fragments {
                         el.classList.remove('current-fragment');
                         if (i === index) {
                             // Announce the fragments one by one to the Screen Reader
-                            this.Reveal.announceStatus(this.Reveal.getStatusText(el));
+                            this.deck.announceStatus(this.deck.getStatusText(el));
                             el.classList.add('current-fragment');
-                            this.Reveal.slideContent.startEmbeddedContent(el);
+                            this.deck.slideContent.startEmbeddedContent(el);
                         }
                         if (!wasVisible) {
                             changedFragments.shown.push(el)
-                            this.Reveal.dispatchEvent({
+                            this.deck.dispatchEvent({
                                 target: el,
                                 type: 'visible',
                                 bubbles: false
@@ -898,7 +948,7 @@ class Fragments {
 
                         if (wasVisible) {
                             changedFragments.hidden.push(el);
-                            this.Reveal.dispatchEvent({
+                            this.deck.dispatchEvent({
                                 target: el,
                                 type: 'hidden',
                                 bubbles: false
@@ -925,7 +975,7 @@ class Fragments {
      * @param {HTMLElement} slide
      * @return {Array} a list of the HTML fragments that were synced
      */
-    sync(slide = this.Reveal.getCurrentSlide()) {
+    sync(slide = this.deck.currentSlide) {
         return this.sort(slide.querySelectorAll('.fragment'));
     }
 
@@ -941,8 +991,8 @@ class Fragments {
      * fragments visibility as part of this call
      */
     goto(index, offset = 0) {
-        let currentSlide = this.Reveal.getCurrentSlide();
-        if (currentSlide && this.Reveal.getConfig().fragments) {
+        let currentSlide = this.deck.currentSlide;
+        if (currentSlide && this.deck.config.fragments) {
             let fragments = this.sort(currentSlide.querySelectorAll('.fragment:not(.disabled)'));
             if (fragments.length) {
                 // If no index is specified, find the current
@@ -961,7 +1011,8 @@ class Fragments {
                 let changedFragments = this.update(index, fragments);
 
                 if (changedFragments.hidden.length) {
-                    this.Reveal.dispatchEvent({
+                    this.deck.dispatchEvent({
+                        target: this.deck.dom.wrapper,
                         type: 'fragmenthidden',
                         data: {
                             fragment: changedFragments.hidden[0],
@@ -971,7 +1022,8 @@ class Fragments {
                 }
 
                 if (changedFragments.shown.length) {
-                    this.Reveal.dispatchEvent({
+                    this.deck.dispatchEvent({
+                        target: this.deck.dom.wrapper,
                         type: 'fragmentshown',
                         data: {
                             fragment: changedFragments.shown[0],
@@ -980,11 +1032,11 @@ class Fragments {
                     });
                 }
 
-                this.Reveal.controls.update();
-                this.Reveal.progress.update();
+                this.deck.controls.update();
+                this.deck.progress.update();
 
-                if (this.Reveal.getConfig().fragmentInURL) {
-                    this.Reveal.location.writeURL();
+                if (this.deck.config.fragmentInURL) {
+                    this.deck.location.writeURL();
                 }
                 return !!(changedFragments.shown.length || changedFragments.hidden.length);
             }
@@ -1029,8 +1081,8 @@ class Fragments {
  * - .navigate-prev
  */
 class Controls {
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         this.onNavigateLeftClicked = this.onNavigateLeftClicked.bind(this);
         this.onNavigateRightClicked = this.onNavigateRightClicked.bind(this);
         this.onNavigateUpClicked = this.onNavigateUpClicked.bind(this);
@@ -1040,8 +1092,8 @@ class Controls {
     }
 
     render() {
-        const rtl = this.Reveal.getConfig().rtl;
-        const revealElement = this.Reveal.getRevealElement();
+        const rtl = this.deck.config.rtl;
+        const revealElement = this.deck.deckElement;
         this.element = document.createElement('aside');
         this.element.className = 'controls';
         this.element.innerHTML =
@@ -1049,7 +1101,7 @@ class Controls {
 			<button class="navigate-right" aria-label="${rtl ? 'previous slide' : 'next slide'}"><div class="controls-arrow"></div></button>
 			<button class="navigate-up" aria-label="above slide"><div class="controls-arrow"></div></button>
 			<button class="navigate-down" aria-label="below slide"><div class="controls-arrow"></div></button>`;
-        this.Reveal.getRevealElement().appendChild(this.element);
+        this.deck.deckElement.appendChild(this.element);
         // There can be multiple instances of controls throughout the page
         this.controlsLeft = queryAll(revealElement, '.navigate-left');
         this.controlsRight = queryAll(revealElement, '.navigate-right');
@@ -1106,7 +1158,7 @@ class Controls {
      * Updates the state of all control/navigation arrows.
      */
     update() {
-        let routes = this.Reveal.availableRoutes();
+        let routes = this.deck.availableRoutes();
         // Remove the 'enabled' class from all directions
         [...this.controlsLeft, ...this.controlsRight, ...this.controlsUp, ...this.controlsDown, ...this.controlsPrev, ...this.controlsNext].forEach(node => {
             node.classList.remove('enabled', 'fragmented');
@@ -1143,9 +1195,9 @@ class Controls {
         });
 
         // Highlight fragment directions
-        let currentSlide = this.Reveal.getCurrentSlide();
+        let currentSlide = this.deck.currentSlide;
         if (currentSlide) {
-            let fragmentsRoutes = this.Reveal.fragments.availableRoutes();
+            let fragmentsRoutes = this.deck.fragments.availableRoutes();
             // Always apply fragment decorator to prev/next buttons
             if (fragmentsRoutes.prev) this.controlsPrev.forEach(el => {
                 el.classList.add('fragmented', 'enabled');
@@ -1157,7 +1209,7 @@ class Controls {
             });
             // Apply fragment decorators to directional buttons based on
             // what slide axis they are in
-            if (this.Reveal.isVerticalSlide(currentSlide)) {
+            if (this.deck.isVerticalSlide(currentSlide)) {
                 if (fragmentsRoutes.prev) this.controlsUp.forEach(el => {
                     el.classList.add('fragmented', 'enabled');
                     el.removeAttribute('disabled');
@@ -1178,22 +1230,22 @@ class Controls {
             }
         }
 
-        if (this.Reveal.getConfig().controlsTutorial) {
-            let indices = this.Reveal.getIndices();
+        if (this.deck.config.controlsTutorial) {
+            let indices = this.deck.getIndices();
             // Highlight control arrows with an animation to ensure
             // that the viewer knows how to navigate
-            if (!this.Reveal.hasNavigatedVertically() && routes.down) {
+            if (!this.deck.navigationHistory.hasNavigatedVertically && routes.down) {
                 this.controlsDownArrow.classList.add('highlight');
             } else {
                 this.controlsDownArrow.classList.remove('highlight');
-                if (this.Reveal.getConfig().rtl) {
-                    if (!this.Reveal.hasNavigatedHorizontally() && routes.left && indices.v === 0) {
+                if (this.deck.config.rtl) {
+                    if (!this.deck.navigationHistory.hasNavigatedHorizontally && routes.left && indices.v === 0) {
                         this.controlsLeftArrow.classList.add('highlight');
                     } else {
                         this.controlsLeftArrow.classList.remove('highlight');
                     }
                 } else {
-                    if (!this.Reveal.hasNavigatedHorizontally() && routes.right && indices.v === 0) {
+                    if (!this.deck.navigationHistory.hasNavigatedHorizontally && routes.right && indices.v === 0) {
                         this.controlsRightArrow.classList.add('highlight');
                     } else {
                         this.controlsRightArrow.classList.remove('highlight');
@@ -1208,46 +1260,46 @@ class Controls {
      */
     onNavigateLeftClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        if (this.Reveal.getConfig().navigationMode === 'linear') {
-            this.Reveal.prev();
+        this.deck.onUserInput();
+        if (this.deck.config.navigationMode === 'linear') {
+            this.deck.navigatePrev();
         } else {
-            this.Reveal.left();
+            this.deck.navigateLeft();
         }
     }
 
     onNavigateRightClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        if (this.Reveal.getConfig().navigationMode === 'linear') {
-            this.Reveal.next();
+        this.deck.onUserInput();
+        if (this.deck.config.navigationMode === 'linear') {
+            this.deck.navigateNext();
         } else {
-            this.Reveal.right();
+            this.deck.navigateRight();
         }
     }
 
     onNavigateUpClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        this.Reveal.up();
+        this.deck.onUserInput();
+        this.deck.navigateUp();
     }
 
     onNavigateDownClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        this.Reveal.down();
+        this.deck.onUserInput();
+        this.deck.navigateDown();
     }
 
     onNavigatePrevClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        this.Reveal.prev();
+        this.deck.onUserInput();
+        this.deck.navigatePrev();
     }
 
     onNavigateNextClicked(event) {
         event.preventDefault();
-        this.Reveal.onUserInput();
-        this.Reveal.next();
+        this.deck.onUserInput();
+        this.deck.navigateNext();
     }
 }
 
@@ -1256,8 +1308,8 @@ class Controls {
  */
 class Keyboard {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         // A key:value map of keyboard keys and descriptions of
         // the actions they trigger
         this.shortcuts = {};
@@ -1367,7 +1419,7 @@ class Keyboard {
     onDocumentKeyPress(event) {
         // Check if the pressed key is question mark
         if (event.shiftKey && event.charCode === 63) {
-            this.Reveal.toggleHelp();
+            this.deck.toggleHelp();
         }
     }
 
@@ -1377,7 +1429,7 @@ class Keyboard {
      * @param {object} event
      */
     onDocumentKeyDown(event) {
-        let config = this.Reveal.getConfig();
+        let config = this.deck.config;
 
         // If there's a condition specified and it returns false,
         // ignore this event
@@ -1387,7 +1439,7 @@ class Keyboard {
 
         // If keyboardCondition is set, only capture keyboard events
         // for embedded decks when they are focused
-        if (config.keyboardCondition === 'focused' && !this.Reveal.isFocused()) {
+        if (config.keyboardCondition === 'focused' && !this.deck.focus.isFocused()) {
             return true;
         }
 
@@ -1395,9 +1447,9 @@ class Keyboard {
         let keyCode = event.keyCode;
 
         // Remember if auto-sliding was paused so we can toggle it
-        let autoSlideWasPaused = !this.Reveal.isAutoSliding();
+        let autoSlideWasPaused = !this.deck.isAutoSliding();
 
-        this.Reveal.onUserInput(event);
+        this.deck.onUserInput(event);
 
         // Is there a focused element that could be using the keyboard?
         let activeElementIsCE = document.activeElement && document.activeElement.isContentEditable === true;
@@ -1430,13 +1482,13 @@ class Keyboard {
             }
         }
 
-        if (this.Reveal.isPaused() && resumeKeyCodes.indexOf(keyCode) === -1) {
+        if (this.deck.isPaused() && resumeKeyCodes.indexOf(keyCode) === -1) {
             return false;
         }
 
         // Use linear navigation if we're configured to OR if
         // the presentation is one-dimensional
-        let useLinearMode = config.navigationMode === 'linear' || !this.Reveal.hasHorizontalSlides() || !this.Reveal.hasVerticalSlides();
+        let useLinearMode = config.navigationMode === 'linear' || !this.deck.hasHorizontalSlides() || !this.deck.hasVerticalSlides();
 
         let triggered = false;
 
@@ -1451,8 +1503,8 @@ class Keyboard {
                         value.apply(null, [event]);
                     }
                     // String shortcuts to  API
-                    else if (typeof value === 'string' && typeof this.Reveal[value] === 'function') {
-                        this.Reveal[value].call();
+                    else if (typeof value === 'string' && typeof this.deck[value] === 'function') {
+                        this.deck[value].call();
                     }
                     triggered = true;
                 }
@@ -1470,8 +1522,8 @@ class Keyboard {
                         action.apply(null, [event]);
                     }
                     // String shortcuts to  API
-                    else if (typeof action === 'string' && typeof this.Reveal[action] === 'function') {
-                        this.Reveal[action].call();
+                    else if (typeof action === 'string' && typeof this.deck[action] === 'function') {
+                        this.deck[action].call();
                     }
                     triggered = true;
                 }
@@ -1484,79 +1536,79 @@ class Keyboard {
             triggered = true;
             // P, PAGE UP
             if (keyCode === 80 || keyCode === 33) {
-                this.Reveal.prev();
+                this.deck.navigatePrev();
             }
             // N, PAGE DOWN
             else if (keyCode === 78 || keyCode === 34) {
-                this.Reveal.next();
+                this.deck.navigateNext();
             }
             // H, LEFT
             else if (keyCode === 72 || keyCode === 37) {
                 if (firstSlideShortcut) {
-                    this.Reveal.slide(0);
-                } else if (!this.Reveal.overview.isActive() && useLinearMode) {
-                    this.Reveal.prev();
+                    this.deck.slide(0);
+                } else if (!this.deck.overview.isActive() && useLinearMode) {
+                    this.deck.navigatePrev();
                 } else {
-                    this.Reveal.left();
+                    this.deck.navigateLeft();
                 }
             }
             // L, RIGHT
             else if (keyCode === 76 || keyCode === 39) {
                 if (lastSlideShortcut) {
-                    this.Reveal.slide(Number.MAX_VALUE);
-                } else if (!this.Reveal.overview.isActive() && useLinearMode) {
-                    this.Reveal.next();
+                    this.deck.slide(Number.MAX_VALUE);
+                } else if (!this.deck.overview.isActive() && useLinearMode) {
+                    this.deck.navigateNext();
                 } else {
-                    this.Reveal.right();
+                    this.deck.navigateRight();
                 }
             }
             // K, UP
             else if (keyCode === 75 || keyCode === 38) {
-                if (!this.Reveal.overview.isActive() && useLinearMode) {
-                    this.Reveal.prev();
+                if (!this.deck.overview.isActive() && useLinearMode) {
+                    this.deck.navigatePrev();
                 } else {
-                    this.Reveal.up();
+                    this.deck.navigateUp();
                 }
             }
             // J, DOWN
             else if (keyCode === 74 || keyCode === 40) {
-                if (!this.Reveal.overview.isActive() && useLinearMode) {
-                    this.Reveal.next();
+                if (!this.deck.overview.isActive() && useLinearMode) {
+                    this.deck.navigateNext();
                 } else {
-                    this.Reveal.down();
+                    this.deck.navigateDown();
                 }
             }
             // HOME
             else if (keyCode === 36) {
-                this.Reveal.slide(0);
+                this.deck.slide(0);
             }
             // END
             else if (keyCode === 35) {
-                this.Reveal.slide(Number.MAX_VALUE);
+                this.deck.slide(Number.MAX_VALUE);
             }
             // SPACE
             else if (keyCode === 32) {
-                if (this.Reveal.overview.isActive()) {
-                    this.Reveal.overview.deactivate();
+                if (this.deck.overview.isActive()) {
+                    this.deck.overview.deactivate();
                 }
                 if (event.shiftKey) {
-                    this.Reveal.prev();
+                    this.deck.navigatePrev();
                 } else {
-                    this.Reveal.next();
+                    this.deck.navigateNext();
                 }
             }
             // TWO-SPOT, SEMICOLON, B, V, PERIOD, LOGITECH PRESENTER TOOLS "BLACK SCREEN" BUTTON
             else if (keyCode === 58 || keyCode === 59 || keyCode === 66 || keyCode === 86 || keyCode === 190 || keyCode === 191) {
-                this.Reveal.togglePause();
+                this.deck.togglePause();
             }
             // F
             else if (keyCode === 70) {
-                enterFullscreen(config.embedded ? this.Reveal.getViewportElement() : document.documentElement);
+                enterFullscreen(config.embedded ? this.deck.dom.viewport : document.documentElement);
             }
             // A
             else if (keyCode === 65) {
                 if (config.autoSlideStoppable) {
-                    this.Reveal.toggleAutoSlide(autoSlideWasPaused);
+                    this.deck.toggleAutoSlide(autoSlideWasPaused);
                 }
             } else {
                 triggered = false;
@@ -1571,15 +1623,15 @@ class Keyboard {
         }
         // ESC or O key
         else if (keyCode === 27 || keyCode === 79) {
-            if (this.Reveal.closeOverlay() === false) {
-                this.Reveal.overview.toggle();
+            if (this.deck.closeOverlay() === false) {
+                this.deck.overview.toggle();
             }
 
             event.preventDefault && event.preventDefault();
         }
         // If auto-sliding is enabled we need to cue up
         // another timeout
-        this.Reveal.cueAutoSlide();
+        this.deck.cueAutoSlide();
     }
 }
 /**
@@ -1622,8 +1674,8 @@ const loadScript = (url, callback) => {
      */
 class Location {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         // Delays updates to the URL due to a Chrome thumbnailer bug
         this.writeURLTimeout = 0;
         this.onWindowHashChange = this.onWindowHashChange.bind(this);
@@ -1641,9 +1693,9 @@ class Location {
      * Reads the current URL (hash) and navigates accordingly.
      */
     readURL() {
-        let config = this.Reveal.getConfig();
-        let indices = this.Reveal.getIndices();
-        let currentSlide = this.Reveal.getCurrentSlide();
+        let config = this.deck.config;
+        let indices = this.deck.getIndices();
+        let currentSlide = this.deck.currentSlide;
         let hash = window.location.hash;
         // Attempt to parse the hash as either an index or name
         let bits = hash.slice(2).split('/'),
@@ -1675,13 +1727,13 @@ class Location {
                 // If the slide exists and is not the current slide...
                 if (!isSameNameAsCurrentSlide || typeof f !== 'undefined') {
                     // ...find the position of the named slide and navigate to it
-                    let slideIndices = this.Reveal.getIndices(element);
-                    this.Reveal.slide(slideIndices.h, slideIndices.v, f);
+                    let slideIndices = this.deck.getIndices(element);
+                    this.deck.slide(slideIndices.h, slideIndices.v, f);
                 }
             }
             // If the slide doesn't exist, navigate to the current slide
             else {
-                this.Reveal.slide(indices.h || 0, indices.v || 0);
+                this.deck.slide(indices.h || 0, indices.v || 0);
             }
         } else {
             let hashIndexBase = config.hashOneBasedIndex ? 1 : 0;
@@ -1699,7 +1751,7 @@ class Location {
             }
 
             if (h !== indices.h || v !== indices.v || f !== undefined) {
-                this.Reveal.slide(h, v, f);
+                this.deck.slide(h, v, f);
             }
         }
     }
@@ -1712,8 +1764,8 @@ class Location {
      * writing the hash
      */
     writeURL(delay) {
-        let config = this.Reveal.getConfig();
-        let currentSlide = this.Reveal.getCurrentSlide();
+        let config = this.deck.config;
+        let currentSlide = this.deck.currentSlide;
         // Make sure there's never more than one timeout running
         clearTimeout(this.writeURLTimeout);
         // If a delay is specified, timeout this call
@@ -1749,14 +1801,14 @@ class Location {
         let url = '/';
 
         // Attempt to create a named link based on the slide's ID
-        let s = slide || this.Reveal.getCurrentSlide();
+        let s = slide || this.deck.currentSlide;
         let id = s ? s.getAttribute('id') : null;
         if (id) {
             id = encodeURIComponent(id);
         }
 
-        let index = this.Reveal.getIndices(slide);
-        if (!this.Reveal.getConfig().fragmentInURL) {
+        let index = this.deck.getIndices(slide);
+        if (!this.deck.config.fragmentInURL) {
             index.f = undefined;
         }
 
@@ -1771,7 +1823,7 @@ class Location {
         }
         // Otherwise use the /h/v index
         else {
-            let hashIndexBase = this.Reveal.getConfig().hashOneBasedIndex ? 1 : 0;
+            let hashIndexBase = this.deck.config.hashOneBasedIndex ? 1 : 0;
             if (index.h > 0 || index.v > 0 || index.f >= 0) url += index.h + hashIndexBase;
             if (index.v > 0 || index.f >= 0) url += '/' + (index.v + hashIndexBase);
             if (index.f >= 0) url += '/' + index.f;
@@ -1795,8 +1847,8 @@ class Location {
  */
 class Notes {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
 
     }
 
@@ -1805,7 +1857,7 @@ class Notes {
         this.element.className = 'speaker-notes';
         this.element.setAttribute('data-prevent-swipe', '');
         this.element.setAttribute('tabindex', '0');
-        this.Reveal.getRevealElement().appendChild(this.element);
+        this.deck.deckElement.appendChild(this.element);
     }
 
     /**
@@ -1824,8 +1876,8 @@ class Notes {
      * @see {@link config.showNotes}
      */
     update() {
-        if (this.Reveal.getConfig().showNotes && this.element && this.Reveal.getCurrentSlide() && !this.Reveal.print.isPrintingPDF()) {
-            this.element.innerHTML = this.getSlideNotes() || '<span class="notes-placeholder">No notes on this slide.</span>';
+        if (this.deck.config.showNotes && this.element && this.deck.currentSlide && !this.deck.print.isPrintingPDF()) {
+            this.element.innerHTML = this.notes.getSlideNotes() || '<span class="notes-placeholder">No notes on this slide.</span>';
         }
     }
 
@@ -1836,10 +1888,10 @@ class Notes {
      * one or more slides in the deck.
      */
     updateVisibility() {
-        if (this.Reveal.getConfig().showNotes && this.hasNotes() && !this.Reveal.print.isPrintingPDF()) {
-            this.Reveal.getRevealElement().classList.add('show-notes');
+        if (this.deck.config.showNotes && this.hasNotes() && !this.deck.print.isPrintingPDF()) {
+            this.deck.deckElement.classList.add('show-notes');
         } else {
-            this.Reveal.getRevealElement().classList.remove('show-notes');
+            this.deck.deckElement.classList.remove('show-notes');
         }
     }
 
@@ -1848,7 +1900,7 @@ class Notes {
      * presentation.
      */
     hasNotes() {
-        return this.Reveal.getSlidesElement().querySelectorAll('[data-notes], aside.notes').length > 0;
+        return this.deck.dom.slides.querySelectorAll('[data-notes], aside.notes').length > 0;
     }
 
     /**
@@ -1870,7 +1922,7 @@ class Notes {
      * @param {HTMLElement} [slide=currentSlide]
      * @return {(string|null)}
      */
-    getSlideNotes(slide = this.Reveal.getCurrentSlide()) {
+    getSlideNotes(slide = this.deck.currentSlide) {
         // Notes can be specified via the data-notes attribute...
         if (slide.hasAttribute('data-notes')) {
             return slide.getAttribute('data-notes');
@@ -1889,8 +1941,8 @@ class Notes {
  * (birds-eye view of all slides).
  */
 class Overview {
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         this.active = false;
         this.onSlideClicked = this.onSlideClicked.bind(this);
     }
@@ -1901,41 +1953,42 @@ class Overview {
      */
     activate() {
         // Only proceed if enabled in config
-        if (this.Reveal.getConfig().overview && !this.isActive()) {
+        if (this.deck.config.overview && !this.isActive()) {
             this.active = true;
-            this.Reveal.getRevealElement().classList.add('overview');
+            this.deck.deckElement.classList.add('overview');
             // Don't auto-slide while in overview mode
-            this.Reveal.cancelAutoSlide();
+            this.deck.cancelAutoSlide();
             // Move the backgrounds element into the slide container to
             // that the same scaling is applied
-            this.Reveal.getSlidesElement().appendChild(this.Reveal.getBackgroundsElement());
+            this.deck.dom.slides.appendChild(this.deck.backgrounds.element);
             // Clicking on an overview slide navigates to it
-            queryAll(this.Reveal.getRevealElement(), SLIDES_SELECTOR).forEach(slide => {
+            queryAll(this.deck.deckElement, SLIDES_SELECTOR).forEach(slide => {
                 if (!slide.classList.contains('stack')) {
                     slide.addEventListener('click', this.onSlideClicked, true);
                 }
             });
             // Calculate slide sizes
             const margin = 70;
-            const slideSize = this.Reveal.getComputedSlideSize();
+            const slideSize = this.deck.getComputedSlideSize();
             this.overviewSlideWidth = slideSize.width + margin;
             this.overviewSlideHeight = slideSize.height + margin;
             // Reverse in RTL mode
-            if (this.Reveal.getConfig().rtl) {
+            if (this.deck.config.rtl) {
                 this.overviewSlideWidth = -this.overviewSlideWidth;
             }
-            this.Reveal.updateSlidesVisibility();
+            this.deck.updateSlidesVisibility();
             this.layout();
             this.update();
-            this.Reveal.layout();
-            const indices = this.Reveal.getIndices();
+            this.deck.layout();
+            const indices = this.deck.getIndices();
             // Notify observers of the overview showing
-            this.Reveal.dispatchEvent({
+            this.deck.dispatchEvent({
+                target: this.deck.dom.wrapper,
                 type: 'overviewshown',
                 data: {
                     'indexh': indices.h,
                     'indexv': indices.v,
-                    'currentSlide': this.Reveal.getCurrentSlide()
+                    'currentSlide': this.deck.currentSlide
                 }
             });
         }
@@ -1947,7 +2000,7 @@ class Overview {
      */
     layout() {
         // Layout slides
-        this.Reveal.getHorizontalSlides().forEach((hslide, h) => {
+        this.deck.getHorizontalSlides().forEach((hslide, h) => {
             hslide.setAttribute('data-index-h', h);
             transformElement(hslide, 'translate3d(' + (h * this.overviewSlideWidth) + 'px, 0, 0)');
             if (hslide.classList.contains('stack')) {
@@ -1960,7 +2013,7 @@ class Overview {
         });
 
         // Layout slide backgrounds
-        Array.from(this.Reveal.getBackgroundsElement().childNodes).forEach((hbackground, h) => {
+        Array.from(this.deck.backgrounds.element.childNodes).forEach((hbackground, h) => {
             transformElement(hbackground, 'translate3d(' + (h * this.overviewSlideWidth) + 'px, 0, 0)');
             queryAll(hbackground, '.slide-background').forEach((vbackground, v) => {
                 transformElement(vbackground, 'translate3d(0, ' + (v * this.overviewSlideHeight) + 'px, 0)');
@@ -1975,8 +2028,8 @@ class Overview {
     update() {
         const vmin = Math.min(window.innerWidth, window.innerHeight);
         const scale = Math.max(vmin / 5, 150) / vmin;
-        const indices = this.Reveal.getIndices();
-        this.Reveal.transformSlides({
+        const indices = this.deck.getIndices();
+        this.deck.transformSlides({
             overview: [
                 'scale(' + scale + ')',
                 'translateX(' + (-indices.h * this.overviewSlideWidth) + 'px)',
@@ -1991,39 +2044,40 @@ class Overview {
      */
     deactivate() {
         // Only proceed if enabled in config
-        if (this.Reveal.getConfig().overview) {
+        if (this.deck.config.overview) {
             this.active = false;
-            this.Reveal.getRevealElement().classList.remove('overview');
+            this.deck.deckElement.classList.remove('overview');
             // Temporarily add a class so that transitions can do different things
             // depending on whether they are exiting/entering overview, or just
             // moving from slide to slide
-            this.Reveal.getRevealElement().classList.add('overview-deactivating');
+            this.deck.deckElement.classList.add('overview-deactivating');
             setTimeout(() => {
-                this.Reveal.getRevealElement().classList.remove('overview-deactivating');
+                this.deck.deckElement.classList.remove('overview-deactivating');
             }, 1);
             // Move the background element back out
-            this.Reveal.getRevealElement().appendChild(this.Reveal.getBackgroundsElement());
+            this.deck.deckElement.appendChild(this.deck.backgrounds.element);
             // Clean up changes made to slides
-            queryAll(this.Reveal.getRevealElement(), SLIDES_SELECTOR).forEach(slide => {
+            queryAll(this.deck.deckElement, SLIDES_SELECTOR).forEach(slide => {
                 transformElement(slide, '');
                 slide.removeEventListener('click', this.onSlideClicked, true);
             });
             // Clean up changes made to backgrounds
-            queryAll(this.Reveal.getBackgroundsElement(), '.slide-background').forEach(background => {
+            queryAll(this.deck.backgrounds.element, '.slide-background').forEach(background => {
                 transformElement(background, '');
             });
-            this.Reveal.transformSlides({ overview: '' });
-            const indices = this.Reveal.getIndices();
-            this.Reveal.slide(indices.h, indices.v);
-            this.Reveal.layout();
-            this.Reveal.cueAutoSlide();
+            this.deck.transformSlides({ overview: '' });
+            const indices = this.deck.getIndices();
+            this.deck.slide(indices.h, indices.v);
+            this.deck.layout();
+            this.deck.cueAutoSlide();
             // Notify observers of the overview hiding
-            this.Reveal.dispatchEvent({
+            this.deck.dispatchEvent({
+                target: this.deck.dom.wrapper,
                 type: 'overviewhidden',
                 data: {
                     'indexh': indices.h,
                     'indexv': indices.v,
-                    'currentSlide': this.Reveal.getCurrentSlide()
+                    'currentSlide': this.deck.currentSlide
                 }
             });
         }
@@ -2072,7 +2126,7 @@ class Overview {
                     let h = parseInt(element.getAttribute('data-index-h'), 10),
                         v = parseInt(element.getAttribute('data-index-v'), 10);
 
-                    this.Reveal.slide(h, v);
+                    this.deck.slide(h, v);
                 }
             }
         }
@@ -2225,8 +2279,8 @@ class Playback {
  */
 class Pointer {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         // Throttles mouse wheel navigation
         this.lastMouseWheelStep = 0;
         // Is the mouse pointer currently hidden from view
@@ -2265,7 +2319,7 @@ class Pointer {
     showCursor() {
         if (this.cursorHidden) {
             this.cursorHidden = false;
-            this.Reveal.getRevealElement().style.cursor = '';
+            this.deck.deckElement.style.cursor = '';
         }
     }
 
@@ -2276,7 +2330,7 @@ class Pointer {
     hideCursor() {
         if (this.cursorHidden === false) {
             this.cursorHidden = true;
-            this.Reveal.getRevealElement().style.cursor = 'none';
+            this.deck.deckElement.style.cursor = 'none';
         }
     }
 
@@ -2289,7 +2343,7 @@ class Pointer {
     onDocumentCursorActive(event) {
         this.showCursor();
         clearTimeout(this.cursorInactiveTimeout);
-        this.cursorInactiveTimeout = setTimeout(this.hideCursor.bind(this), this.Reveal.getConfig().hideCursorTime);
+        this.cursorInactiveTimeout = setTimeout(this.hideCursor.bind(this), this.deck.config.hideCursorTime);
     }
 
     /**
@@ -2303,9 +2357,9 @@ class Pointer {
             this.lastMouseWheelStep = Date.now();
             let delta = event.detail || -event.wheelDelta;
             if (delta > 0) {
-                this.Reveal.next();
+                this.deck.navigateNext();
             } else if (delta < 0) {
-                this.Reveal.prev();
+                this.deck.navigatePrev();
             }
         }
     }
@@ -2317,8 +2371,8 @@ class Pointer {
  */
 class Print {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
     }
 
     /**
@@ -2326,8 +2380,8 @@ class Print {
      * PDF.
      */
     setupPDF() {
-        let config = this.Reveal.getConfig();
-        let slideSize = this.Reveal.getComputedSlideSize(window.innerWidth, window.innerHeight);
+        let config = this.deck.config;
+        let slideSize = this.deck.getComputedSlideSize(window.innerWidth, window.innerHeight);
         // Dimensions of the PDF pages
         let pageWidth = Math.floor(slideSize.width * (1 + config.margin)),
             pageHeight = Math.floor(slideSize.height * (1 + config.margin));
@@ -2347,16 +2401,16 @@ class Print {
         document.body.style.height = pageHeight + 'px';
 
         // Make sure stretch elements fit on slide
-        this.Reveal.layoutSlideContents(slideWidth, slideHeight);
+        this.deck.layoutSlideContents(slideWidth, slideHeight);
 
         // Compute slide numbers now, before we start duplicating slides
         let doingSlideNumbers = config.slideNumber && /all|print/i.test(config.showSlideNumber);
-        queryAll(this.Reveal.getRevealElement(), SLIDES_SELECTOR).forEach(function(slide) {
-            slide.setAttribute('data-slide-number', this.Reveal.slideNumber.getSlideNumber(slide));
+        queryAll(this.deck.deckElement, SLIDES_SELECTOR).forEach(function(slide) {
+            slide.setAttribute('data-slide-number', this.deck.slideNumber.getSlideNumber(slide));
         }, this);
 
         // Slide and slide background layout
-        queryAll(this.Reveal.getRevealElement(), SLIDES_SELECTOR).forEach(function(slide) {
+        queryAll(this.deck.deckElement, SLIDES_SELECTOR).forEach(function(slide) {
             // Vertical stacks are not centred since their section
             // children will be
             if (slide.classList.contains('stack') === false) {
@@ -2395,7 +2449,7 @@ class Print {
                 // Inject notes if `showNotes` is enabled
                 if (config.showNotes) {
                     // Are there notes for this slide?
-                    let notes = this.Reveal.getSlideNotes(slide);
+                    let notes = this.deck.notes.getSlideNotes(slide);
                     if (notes) {
                         let notesSpacing = 8;
                         let notesLayout = typeof config.showNotes === 'string' ? config.showNotes : 'inline';
@@ -2430,7 +2484,7 @@ class Print {
                     // Each fragment 'group' is an array containing one or more
                     // fragments. Multiple fragments that appear at the same time
                     // are part of the same group.
-                    let fragmentGroups = this.Reveal.fragments.sort(page.querySelectorAll('.fragment'), true);
+                    let fragmentGroups = this.deck.fragments.sort(page.querySelectorAll('.fragment'), true);
                     let previousFragmentStep;
                     let previousPage;
                     fragmentGroups.forEach(function(fragments) {
@@ -2476,7 +2530,7 @@ class Print {
         }, this);
 
         // Notify subscribers that the PDF layout is good to go
-        this.Reveal.dispatchEvent({ type: 'pdf-ready' });
+        this.deck.dispatchEvent({ target: this.deck.dom.wrapper, type: 'pdf-ready' });
 
     }
 
@@ -2493,15 +2547,15 @@ class Print {
  */
 class Progress {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         this.onProgressClicked = this.onProgressClicked.bind(this);
     }
 
     render() {
         this.element = document.createElement('div');
         this.element.className = 'progress';
-        this.Reveal.getRevealElement().appendChild(this.element);
+        this.deck.deckElement.appendChild(this.element);
         this.bar = document.createElement('span');
         this.element.appendChild(this.bar);
     }
@@ -2514,13 +2568,13 @@ class Progress {
     }
 
     bind() {
-        if (this.Reveal.getConfig().progress && this.element) {
+        if (this.deck.config.progress && this.element) {
             this.element.addEventListener('click', this.onProgressClicked, false);
         }
     }
 
     unbind() {
-        if (this.Reveal.getConfig().progress && this.element) {
+        if (this.deck.config.progress && this.element) {
             this.element.removeEventListener('click', this.onProgressClicked, false);
         }
     }
@@ -2530,10 +2584,10 @@ class Progress {
      */
     update() {
         // Update progress if enabled
-        if (this.Reveal.getConfig().progress && this.bar) {
-            let scale = this.Reveal.getProgress();
+        if (this.deck.config.progress && this.bar) {
+            let scale = this.deck.getProgress();
             // Don't fill the progress bar if there's only one slide
-            if (this.Reveal.getTotalSlides() < 2) {
+            if (this.deck.getTotalSlides() < 2) {
                 scale = 0;
             }
             this.bar.style.transform = 'scaleX(' + scale + ')';
@@ -2541,7 +2595,7 @@ class Progress {
     }
 
     getMaxWidth() {
-        return this.Reveal.getRevealElement().offsetWidth;
+        return this.deck.deckElement.offsetWidth;
 
     }
 
@@ -2554,14 +2608,14 @@ class Progress {
      * @param {object} event
      */
     onProgressClicked(event) {
-        this.Reveal.onUserInput(event);
+        this.deck.onUserInput(event);
         event.preventDefault();
-        let slidesTotal = this.Reveal.getHorizontalSlides().length;
+        let slidesTotal = this.deck.getHorizontalSlides().length;
         let slideIndex = Math.floor((event.clientX / this.getMaxWidth()) * slidesTotal);
-        if (this.Reveal.getConfig().rtl) {
+        if (this.deck.config.rtl) {
             slideIndex = slidesTotal - slideIndex;
         }
-        this.Reveal.slide(slideIndex);
+        this.deck.slide(slideIndex);
     }
 }
 
@@ -2574,9 +2628,9 @@ const SWIPE_THRESHOLD = 40;
  */
 class Touch {
 
-    constructor(Reveal) {
+    constructor(deck) {
 
-        this.Reveal = Reveal;
+        this.deck = deck;
 
         // Holds information about the currently ongoing touch interaction
         this.touchStartX = 0;
@@ -2598,23 +2652,23 @@ class Touch {
      */
     bind() {
 
-        let revealElement = this.Reveal.getRevealElement();
+        let el = this.deck.deckElement;
 
         if ('onpointerdown' in window) {
             // Use W3C pointer events
-            revealElement.addEventListener('pointerdown', this.onPointerDown, false);
-            revealElement.addEventListener('pointermove', this.onPointerMove, false);
-            revealElement.addEventListener('pointerup', this.onPointerUp, false);
+            el.addEventListener('pointerdown', this.onPointerDown, false);
+            el.addEventListener('pointermove', this.onPointerMove, false);
+            el.addEventListener('pointerup', this.onPointerUp, false);
         } else if (window.navigator.msPointerEnabled) {
             // IE 10 uses prefixed version of pointer events
-            revealElement.addEventListener('MSPointerDown', this.onPointerDown, false);
-            revealElement.addEventListener('MSPointerMove', this.onPointerMove, false);
-            revealElement.addEventListener('MSPointerUp', this.onPointerUp, false);
+            el.addEventListener('MSPointerDown', this.onPointerDown, false);
+            el.addEventListener('MSPointerMove', this.onPointerMove, false);
+            el.addEventListener('MSPointerUp', this.onPointerUp, false);
         } else {
             // Fall back to touch events
-            revealElement.addEventListener('touchstart', this.onTouchStart, false);
-            revealElement.addEventListener('touchmove', this.onTouchMove, false);
-            revealElement.addEventListener('touchend', this.onTouchEnd, false);
+            el.addEventListener('touchstart', this.onTouchStart, false);
+            el.addEventListener('touchmove', this.onTouchMove, false);
+            el.addEventListener('touchend', this.onTouchEnd, false);
         }
 
     }
@@ -2624,19 +2678,19 @@ class Touch {
      */
     unbind() {
 
-        let revealElement = this.Reveal.getRevealElement();
+        let el = this.deck.deckElement;
 
-        revealElement.removeEventListener('pointerdown', this.onPointerDown, false);
-        revealElement.removeEventListener('pointermove', this.onPointerMove, false);
-        revealElement.removeEventListener('pointerup', this.onPointerUp, false);
+        el.removeEventListener('pointerdown', this.onPointerDown, false);
+        el.removeEventListener('pointermove', this.onPointerMove, false);
+        el.removeEventListener('pointerup', this.onPointerUp, false);
 
-        revealElement.removeEventListener('MSPointerDown', this.onPointerDown, false);
-        revealElement.removeEventListener('MSPointerMove', this.onPointerMove, false);
-        revealElement.removeEventListener('MSPointerUp', this.onPointerUp, false);
+        el.removeEventListener('MSPointerDown', this.onPointerDown, false);
+        el.removeEventListener('MSPointerMove', this.onPointerMove, false);
+        el.removeEventListener('MSPointerUp', this.onPointerUp, false);
 
-        revealElement.removeEventListener('touchstart', this.onTouchStart, false);
-        revealElement.removeEventListener('touchmove', this.onTouchMove, false);
-        revealElement.removeEventListener('touchend', this.onTouchEnd, false);
+        el.removeEventListener('touchstart', this.onTouchStart, false);
+        el.removeEventListener('touchmove', this.onTouchMove, false);
+        el.removeEventListener('touchend', this.onTouchEnd, false);
 
     }
 
@@ -2680,11 +2734,11 @@ class Touch {
 
         if (this.isSwipePrevented(event.target)) return true;
 
-        let config = this.Reveal.getConfig();
+        let config = this.deck.config;
 
         // Each touch should only trigger one action
         if (!this.touchCaptured) {
-            this.Reveal.onUserInput(event);
+            this.deck.onUserInput(event);
 
             let currentX = event.touches[0].clientX;
             let currentY = event.touches[0].clientY;
@@ -2692,7 +2746,7 @@ class Touch {
             // There was only one touch point, look for a swipe
             if (event.touches.length === 1 && this.touchStartCount !== 2) {
 
-                let availableRoutes = this.Reveal.availableRoutes({ includeFragments: true });
+                let availableRoutes = this.deck.availableRoutes({ includeFragments: true });
 
                 let deltaX = currentX - this.touchStartX,
                     deltaY = currentY - this.touchStartY;
@@ -2701,44 +2755,44 @@ class Touch {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
                         if (config.rtl) {
-                            this.Reveal.next();
+                            this.deck.navigateNext();
                         } else {
-                            this.Reveal.prev();
+                            this.deck.navigatePrev();
                         }
                     } else {
-                        this.Reveal.left();
+                        this.deck.navigateLeft();
                     }
                 } else if (deltaX < -SWIPE_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY)) {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
                         if (config.rtl) {
-                            this.Reveal.prev();
+                            this.deck.navigatePrev();
                         } else {
-                            this.Reveal.next();
+                            this.deck.navigateNext();
                         }
                     } else {
-                        this.Reveal.right();
+                        this.deck.navigateRight();
                     }
                 } else if (deltaY > SWIPE_THRESHOLD && availableRoutes.up) {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
-                        this.Reveal.prev();
+                        this.deck.navigatePrev();
                     } else {
-                        this.Reveal.up();
+                        this.deck.navigateUp();
                     }
                 } else if (deltaY < -SWIPE_THRESHOLD && availableRoutes.down) {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
-                        this.Reveal.next();
+                        this.deck.navigateNext();
                     } else {
-                        this.Reveal.down();
+                        this.deck.navigateDown();
                     }
                 }
 
                 // If we're embedded, only block touch events if they have
                 // triggered an action
                 if (config.embedded) {
-                    if (this.touchCaptured || this.Reveal.isVerticalSlide()) {
+                    if (this.touchCaptured || this.deck.isVerticalSlide()) {
                         event.preventDefault();
                     }
                 }
@@ -2816,15 +2870,15 @@ class Touch {
  * Handles the display of ' optional slide number.
  */
 class SlideNumber {
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
 
     }
 
     render() {
         this.element = document.createElement('div');
         this.element.className = 'slide-number';
-        this.Reveal.getRevealElement().appendChild(this.element);
+        this.deck.deckElement.appendChild(this.element);
     }
 
     /**
@@ -2832,10 +2886,10 @@ class SlideNumber {
      */
     configure(config, oldConfig) {
         let slideNumberDisplay = 'none';
-        if (config.slideNumber && !this.Reveal.isPrintingPDF()) {
+        if (config.slideNumber && !this.deck.isPrintingPDF()) {
             if (config.showSlideNumber === 'all') {
                 slideNumberDisplay = 'block';
-            } else if (config.showSlideNumber === 'speaker' && this.Reveal.isSpeakerNotes()) {
+            } else if (config.showSlideNumber === 'speaker' && this.deck.notes.isSpeakerNotesWindow()) {
                 slideNumberDisplay = 'block';
             }
         }
@@ -2847,7 +2901,7 @@ class SlideNumber {
      */
     update() {
         // Update slide number if enabled
-        if (this.Reveal.getConfig().slideNumber && this.element) {
+        if (this.deck.config.slideNumber && this.element) {
             this.element.innerHTML = this.getSlideNumber();
         }
     }
@@ -2856,8 +2910,8 @@ class SlideNumber {
      * Returns the HTML string corresponding to the current slide
      * number, including formatting.
      */
-    getSlideNumber(slide = this.Reveal.getCurrentSlide()) {
-        let config = this.Reveal.getConfig();
+    getSlideNumber(slide = this.deck.currentSlide) {
+        let config = this.deck.config;
         let value;
         let format = 'h.v';
         if (typeof config.slideNumber === 'function') {
@@ -2869,7 +2923,7 @@ class SlideNumber {
             }
             // If there are ONLY vertical slides in this deck, always use
             // a flattened slide number
-            if (!/c/.test(format) && this.Reveal.getHorizontalSlides().length === 1) {
+            if (!/c/.test(format) && this.deck.getHorizontalSlides().length === 1) {
                 format = 'c';
             }
             // Offset the current slide number by 1 to make it 1-indexed
@@ -2877,19 +2931,19 @@ class SlideNumber {
             value = [];
             switch (format) {
                 case 'c':
-                    value.push(this.Reveal.getSlidePastCount(slide) + horizontalOffset);
+                    value.push(this.deck.getSlidePastCount(slide) + horizontalOffset);
                     break;
                 case 'c/t':
-                    value.push(this.Reveal.getSlidePastCount(slide) + horizontalOffset, '/', this.Reveal.getTotalSlides());
+                    value.push(this.deck.getSlidePastCount(slide) + horizontalOffset, '/', this.deck.getTotalSlides());
                     break;
                 default:
-                    let indices = this.Reveal.getIndices(slide);
+                    let indices = this.deck.getIndices(slide);
                     value.push(indices.h + horizontalOffset);
                     let sep = format === 'h/v' ? '/' : '.';
-                    if (this.Reveal.isVerticalSlide(slide)) value.push(sep, indices.v + 1);
+                    if (this.deck.isVerticalSlide(slide)) value.push(sep, indices.v + 1);
             }
         }
-        let url = '#' + this.Reveal.location.getHash(slide);
+        let url = '#' + this.deck.location.getHash(slide);
         return this.formatNumber(value[0], value[1], value[2], url);
     }
 
@@ -2903,7 +2957,7 @@ class SlideNumber {
      * @param {HTMLElement} [url='#'+locationHash()] The url to link to
      * @return {string} HTML string fragment
      */
-    formatNumber(a, delimiter, b, url = '#' + this.Reveal.location.getHash()) {
+    formatNumber(a, delimiter, b, url = '#' + this.deck.location.getHash()) {
         if (typeof b === 'number' && !isNaN(b)) {
             return `<a href="${url}">
 					<span class="slide-number-a">${a}</span>
@@ -2924,8 +2978,8 @@ class SlideNumber {
  */
 class Plugins {
 
-    constructor(reveal) {
-        this.Reveal = reveal;
+    constructor(deck) {
+        this.deck = deck;
         // Flags our current state (idle -> loading -> loaded)
         this.state = 'idle';
         // An id:instance map of currently registed plugins
@@ -3017,7 +3071,7 @@ class Plugins {
                         let plugin = pluginValues[i++];
                         // If the plugin has an 'init' method, invoke it
                         if (typeof plugin.init === 'function') {
-                            let promise = plugin.init(this.Reveal);
+                            let promise = plugin.init(this.deck);
                             // If the plugin returned a Promise, wait for it
                             if (promise && typeof promise.then === 'function') {
                                 promise.then(afterPlugInitialized);
@@ -3046,11 +3100,11 @@ class Plugins {
     }
 
     /**
-     * Registers a new plugin with this  instance.
+     * Registers a new plugin with this instance.
      *
-     *  waits for all regisered plugins to initialize
+     *  waits for all registered plugins to initialize
      * before considering itself ready, as long as the plugin
-     * is registered before calling `Reveal.initialize()`.
+     * is registered before calling `Deck.initialize()`.
      */
     registerPlugin(plugin) {
         // Backwards compatibility to make  ~3.9.0
@@ -3075,7 +3129,7 @@ class Plugins {
             // If a plugin is registered after  is loaded,
             // initialize it right away
             if (this.state === 'loaded' && typeof plugin.init === 'function') {
-                plugin.init(this.Reveal);
+                plugin.init(this.deck);
             }
         } else {
             console.warn(': "' + id + '" plugin has already been registered');
@@ -3116,8 +3170,8 @@ let autoAnimateCounter = 0;
  */
 class AutoAnimate {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
     }
 
     /**
@@ -3138,14 +3192,14 @@ class AutoAnimate {
             fromSlide.dataset.autoAnimate = 'pending';
             toSlide.dataset.autoAnimate = 'pending';
             // Flag the navigation direction, needed for fragment buildup
-            let allSlides = this.Reveal.getSlides();
+            let allSlides = this.deck.getSlides();
             animationOptions.slideDirection = allSlides.indexOf(toSlide) > allSlides.indexOf(fromSlide) ? 'forward' : 'backward';
             // Inject our auto-animate styles for this transition
             let css = this.getAutoAnimatableElements(fromSlide, toSlide).map(elements => {
                 return this.autoAnimateElements(elements.from, elements.to, elements.options || {}, animationOptions, autoAnimateCounter++);
             });
             // Animate unmatched elements, if enabled
-            if (toSlide.dataset.autoAnimateUnmatched !== 'false' && this.Reveal.getConfig().autoAnimateUnmatched === true) {
+            if (toSlide.dataset.autoAnimateUnmatched !== 'false' && this.deck.config.autoAnimateUnmatched === true) {
                 // Our default timings for unmatched elements
                 let defaultUnmatchedDuration = animationOptions.duration * 0.8,
                     defaultUnmatchedDelay = animationOptions.duration * 0.2;
@@ -3180,7 +3234,8 @@ class AutoAnimate {
                 }
             });
 
-            this.Reveal.dispatchEvent({
+            this.deck.dispatchEvent({
+                target: this.deck.dom.wrapper,
                 type: 'autoanimate',
                 data: {
                     fromSlide,
@@ -3197,11 +3252,11 @@ class AutoAnimate {
      */
     reset() {
         // Reset slides
-        queryAll(this.Reveal.getRevealElement(), '[data-auto-animate]:not([data-auto-animate=""])').forEach(element => {
+        queryAll(this.deck.deckElement, '[data-auto-animate]:not([data-auto-animate=""])').forEach(element => {
             element.dataset.autoAnimate = '';
         });
         // Reset elements
-        queryAll(this.Reveal.getRevealElement(), '[data-auto-animate-target]').forEach(element => {
+        queryAll(this.deck.deckElement, '[data-auto-animate-target]').forEach(element => {
             delete element.dataset.autoAnimateTarget;
         });
         // Remove the animation sheet
@@ -3263,7 +3318,7 @@ class AutoAnimate {
         // the 'to' element so that it matches the position and size
         // of the 'from' element
         if (elementOptions.translate !== false || elementOptions.scale !== false) {
-            let presentationScale = this.Reveal.getScale();
+            let presentationScale = this.deck.scale;
             let delta = {
                 x: (fromProps.x - toProps.x) / presentationScale,
                 y: (fromProps.y - toProps.y) / presentationScale,
@@ -3352,8 +3407,8 @@ class AutoAnimate {
      */
     getAutoAnimateOptions(element, inheritedOptions) {
             let options = {
-                easing: this.Reveal.getConfig().autoAnimateEasing,
-                duration: this.Reveal.getConfig().autoAnimateDuration,
+                easing: this.deck.config.autoAnimateEasing,
+                duration: this.deck.config.autoAnimateDuration,
                 delay: 0
             };
             options = extend(options, inheritedOptions);
@@ -3383,7 +3438,7 @@ class AutoAnimate {
          * @param {String} direction 'from' or 'to'
          */
     getAutoAnimatableProperties(direction, element, elementOptions) {
-        let config = this.Reveal.getConfig();
+        let config = this.deck.config;
         let properties = { styles: [] };
         // Position and size
         if (elementOptions.translate !== false || elementOptions.scale !== false) {
@@ -3398,7 +3453,7 @@ class AutoAnimate {
                     // with zoom for scaling the deck ¯\_(ツ)_/¯
                     bounds = element.getBoundingClientRect();
                 } else {
-                    let scale = this.Reveal.getScale();
+                    let scale = this.deck.scale;
                     bounds = {
                         x: element.offsetLeft * scale,
                         y: element.offsetTop * scale,
@@ -3450,7 +3505,7 @@ class AutoAnimate {
      * element we're animating to
      */
     getAutoAnimatableElements(fromSlide, toSlide) {
-        let matcher = typeof this.Reveal.getConfig().autoAnimateMatcher === 'function' ? this.Reveal.getConfig().autoAnimateMatcher : this.getAutoAnimatePairs;
+        let matcher = typeof this.deck.config.autoAnimateMatcher === 'function' ? this.deck.config.autoAnimateMatcher : this.getAutoAnimatePairs;
         let pairs = matcher.call(this, fromSlide, toSlide);
         let reserved = [];
         // Remove duplicate pairs
@@ -3529,7 +3584,7 @@ class AutoAnimate {
      * @return {Object} x, y, width, height
      */
     getLocalBoundingBox(element) {
-        const presentationScale = this.Reveal.getScale();
+        const presentationScale = this.deck.scale;
         return {
             x: Math.round((element.offsetLeft * presentationScale) * 100) / 100,
             y: Math.round((element.offsetTop * presentationScale) * 100) / 100,
@@ -3632,14 +3687,14 @@ class AutoAnimate {
  */
 class Backgrounds {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
     }
 
     render() {
         this.element = document.createElement('div');
         this.element.className = 'backgrounds';
-        this.Reveal.getRevealElement().appendChild(this.element);
+        this.deck.deckElement.appendChild(this.element);
     }
 
     /**
@@ -3648,12 +3703,12 @@ class Backgrounds {
      * slide no matter if the given slide has visible background.
      */
     create() {
-            let printMode = this.Reveal.isPrintingPDF();
+            let printMode = this.deck.isPrintingPDF();
             // Clear prior backgrounds
             this.element.innerHTML = '';
             this.element.classList.add('no-transition');
             // Iterate over all horizontal slides
-            this.Reveal.getHorizontalSlides().forEach(slideh => {
+            this.deck.getHorizontalSlides().forEach(slideh => {
                 let backgroundStack = this.createBackground(slideh, this.element);
                 // Iterate over all vertical slides
                 queryAll(slideh, 'section').forEach(slidev => {
@@ -3663,22 +3718,22 @@ class Backgrounds {
             });
 
             // Add parallax background if specified
-            if (this.Reveal.getConfig().parallaxBackgroundImage) {
-                this.element.style.backgroundImage = 'url("' + this.Reveal.getConfig().parallaxBackgroundImage + '")';
-                this.element.style.backgroundSize = this.Reveal.getConfig().parallaxBackgroundSize;
-                this.element.style.backgroundRepeat = this.Reveal.getConfig().parallaxBackgroundRepeat;
-                this.element.style.backgroundPosition = this.Reveal.getConfig().parallaxBackgroundPosition;
+            if (this.deck.config.parallaxBackgroundImage) {
+                this.element.style.backgroundImage = 'url("' + this.deck.config.parallaxBackgroundImage + '")';
+                this.element.style.backgroundSize = this.deck.config.parallaxBackgroundSize;
+                this.element.style.backgroundRepeat = this.deck.config.parallaxBackgroundRepeat;
+                this.element.style.backgroundPosition = this.deck.config.parallaxBackgroundPosition;
 
                 // Make sure the below properties are set on the element - these properties are
                 // needed for proper transitions to be set on the element via CSS. To remove
                 // annoying background slide-in effect when the presentation starts, apply
                 // these properties after short time delay
                 setTimeout(() => {
-                    this.Reveal.getRevealElement().classList.add('has-parallax-background');
+                    this.deck.deckElement.classList.add('has-parallax-background');
                 }, 1);
             } else {
                 this.element.style.backgroundImage = '';
-                this.Reveal.getRevealElement().classList.remove('has-parallax-background');
+                this.deck.deckElement.classList.remove('has-parallax-background');
             }
         }
         /**
@@ -3820,12 +3875,12 @@ class Backgrounds {
      * all vertical slides (not just the present) will be updated.
      */
     update(includeAll = false) {
-            let currentSlide = this.Reveal.getCurrentSlide();
-            let indices = this.Reveal.getIndices();
+            let currentSlide = this.deck.currentSlide;
+            let indices = this.deck.getIndices();
             let currentBackground = null;
             // Reverse past/future classes when in RTL mode
-            let horizontalPast = this.Reveal.getConfig().rtl ? 'future' : 'past',
-                horizontalFuture = this.Reveal.getConfig().rtl ? 'past' : 'future';
+            let horizontalPast = this.deck.config.rtl ? 'future' : 'past',
+                horizontalFuture = this.deck.config.rtl ? 'past' : 'future';
             // Update the classes of all backgrounds to match the
             // states of their slides (past/present/future)
             Array.from(this.element.childNodes).forEach((backgroundh, h) => {
@@ -3857,12 +3912,12 @@ class Backgrounds {
 
             // Stop content inside of previous backgrounds
             if (this.previousBackground) {
-                this.Reveal.slideContent.stopEmbeddedContent(this.previousBackground, { unloadIframes: !this.Reveal.slideContent.shouldPreload(this.previousBackground) });
+                this.deck.slideContent.stopEmbeddedContent(this.previousBackground, { unloadIframes: !this.deck.slideContent.shouldPreload(this.previousBackground) });
             }
 
             // Start content in the current background
             if (currentBackground) {
-                this.Reveal.slideContent.startEmbeddedContent(currentBackground);
+                this.deck.slideContent.startEmbeddedContent(currentBackground);
                 let currentBackgroundContent = currentBackground.querySelector('.slide-background-content');
                 if (currentBackgroundContent) {
                     let backgroundImageURL = currentBackgroundContent.style.backgroundImage || '';
@@ -3887,9 +3942,9 @@ class Backgrounds {
             if (currentSlide) {
                 ['has-light-background', 'has-dark-background'].forEach(classToBubble => {
                     if (currentSlide.classList.contains(classToBubble)) {
-                        this.Reveal.getRevealElement().classList.add(classToBubble);
+                        this.deck.deckElement.classList.add(classToBubble);
                     } else {
-                        this.Reveal.getRevealElement().classList.remove(classToBubble);
+                        this.deck.deckElement.classList.remove(classToBubble);
                     }
                 }, this);
             }
@@ -3903,10 +3958,10 @@ class Backgrounds {
          * on the current slide index.
          */
     updateParallax() {
-        let indices = this.Reveal.getIndices();
-        if (this.Reveal.getConfig().parallaxBackgroundImage) {
-            let horizontalSlides = this.Reveal.getHorizontalSlides(),
-                verticalSlides = this.Reveal.getVerticalSlides();
+        let indices = this.deck.getIndices();
+        if (this.deck.config.parallaxBackgroundImage) {
+            let horizontalSlides = this.deck.getHorizontalSlides(),
+                verticalSlides = this.deck.getVerticalSlides();
             let backgroundSize = this.element.style.backgroundSize.split(' '),
                 backgroundWidth, backgroundHeight;
             if (backgroundSize.length === 1) {
@@ -3919,8 +3974,8 @@ class Backgrounds {
                 horizontalSlideCount = horizontalSlides.length,
                 horizontalOffsetMultiplier,
                 horizontalOffset;
-            if (typeof this.Reveal.getConfig().parallaxBackgroundHorizontal === 'number') {
-                horizontalOffsetMultiplier = this.Reveal.getConfig().parallaxBackgroundHorizontal;
+            if (typeof this.deck.config.parallaxBackgroundHorizontal === 'number') {
+                horizontalOffsetMultiplier = this.deck.config.parallaxBackgroundHorizontal;
             } else {
                 horizontalOffsetMultiplier = horizontalSlideCount > 1 ? (backgroundWidth - slideWidth) / (horizontalSlideCount - 1) : 0;
             }
@@ -3929,8 +3984,8 @@ class Backgrounds {
                 verticalSlideCount = verticalSlides.length,
                 verticalOffsetMultiplier,
                 verticalOffset;
-            if (typeof this.Reveal.getConfig().parallaxBackgroundVertical === 'number') {
-                verticalOffsetMultiplier = this.Reveal.getConfig().parallaxBackgroundVertical;
+            if (typeof this.deck.config.parallaxBackgroundVertical === 'number') {
+                verticalOffsetMultiplier = this.deck.config.parallaxBackgroundVertical;
             } else {
                 verticalOffsetMultiplier = (backgroundHeight - slideHeight) / (verticalSlideCount - 1);
             }
@@ -4244,8 +4299,8 @@ const fitty = ((w) => {
 // === slide content ===
 class SlideContent {
 
-    constructor(Reveal) {
-        this.Reveal = Reveal;
+    constructor(deck) {
+        this.deck = deck;
         this.startEmbeddedIframe = this.startEmbeddedIframe.bind(this);
     }
 
@@ -4257,7 +4312,7 @@ class SlideContent {
      */
     shouldPreload(element) {
         // Prefer an explicit global preload setting
-        let preload = this.Reveal.getConfig().preloadIframes;
+        let preload = this.deck.config.preloadIframes;
         // If no global setting is available, fall back on the element's
         // own preload setting
         if (typeof preload !== 'boolean') {
@@ -4275,7 +4330,7 @@ class SlideContent {
      */
     load(slide, options = {}) {
         // Show the slide element
-        slide.style.display = this.Reveal.getConfig().display;
+        slide.style.display = this.deck.config.display;
         // Media elements with data-src attributes
         queryAll(slide, 'img[data-src], video[data-src], audio[data-src], iframe[data-src]').forEach(element => {
             if (element.tagName !== 'IFRAME' || this.shouldPreload(element)) {
@@ -4321,7 +4376,7 @@ class SlideContent {
                     backgroundContent.style.backgroundImage = 'url(' + encodeURI(backgroundImage) + ')';
                 }
                 // Videos
-                else if (backgroundVideo && !this.Reveal.isSpeakerNotes()) {
+                else if (backgroundVideo && !this.deck.notes.isSpeakerNotesWindow()) {
                     let video = document.createElement('video');
                     if (backgroundVideoLoop) {
                         video.setAttribute('loop', '');
@@ -4378,7 +4433,7 @@ class SlideContent {
             element.dataset.fitted = '';
             fitty(element, {
                 minSize: 24,
-                maxSize: this.Reveal.getConfig().height * 0.8,
+                maxSize: this.deck.config.height * 0.8,
                 observeMutations: false,
                 observeWindow: false
             });
@@ -4395,7 +4450,7 @@ class SlideContent {
         // Hide the slide element
         slide.style.display = 'none';
         // Hide the corresponding background element
-        let background = this.Reveal.getSlideBackground(slide);
+        let background = this.deck.getSlideBackground(slide);
         if (background) {
             background.style.display = 'none';
             // Unload any background iframes
@@ -4420,7 +4475,7 @@ class SlideContent {
      */
     formatEmbeddedContent() {
         let _appendParamToIframeSource = (sourceAttribute, sourceURL, param) => {
-            queryAll(this.Reveal.getSlidesElement(), 'iframe[' + sourceAttribute + '*="' + sourceURL + '"]').forEach(el => {
+            queryAll(this.deck.dom.slides, 'iframe[' + sourceAttribute + '*="' + sourceURL + '"]').forEach(el => {
                 let src = el.getAttribute(sourceAttribute);
                 if (src && src.indexOf(param) === -1) {
                     el.setAttribute(sourceAttribute, src + (!/\?/.test(src) ? '?' : '&') + param);
@@ -4442,7 +4497,7 @@ class SlideContent {
      * @param {HTMLElement} element
      */
     startEmbeddedContent(element) {
-        if (element && !this.Reveal.isSpeakerNotes()) {
+        if (element && !this.deck.notes.isSpeakerNotesWindow()) {
             // Restart GIFs
             queryAll(element, 'img[src$=".gif"]').forEach(el => {
                 // Setting the same unchanged source like this was confirmed
@@ -4455,7 +4510,7 @@ class SlideContent {
                     return;
                 }
                 // Prefer an explicit global autoplay setting
-                let autoplay = this.Reveal.getConfig().autoPlayMedia;
+                let autoplay = this.deck.config.autoPlayMedia;
                 // If no global setting is available, fall back on the element's
                 // own autoplay setting
                 if (typeof autoplay !== 'boolean') {
@@ -4541,7 +4596,7 @@ class SlideContent {
                     isVisible = !!closest(event.target, '.present');
                 if (isAttachedToDOM && isVisible) {
                     // Prefer an explicit global autoplay setting
-                    let autoplay = this.Reveal.getConfig().autoPlayMedia;
+                    let autoplay = this.deck.config.autoPlayMedia;
                     // If no global setting is available, fall back on the element's
                     // own autoplay setting
                     if (typeof autoplay !== 'boolean') {
@@ -4611,156 +4666,206 @@ class SlideContent {
     }
 }
 
-// === end of slide content ===
-const Deck = function(revealElement, options) {
-    // Support initialization with no args, one arg
-    // [options] or two args [revealElement, options]
-    if (arguments.length < 2) {
-        options = arguments[0];
-        revealElement = document.querySelector('.reveal');
+class Deck {
+
+    config = {};
+
+    // Flags if  is loaded (has dispatched the 'ready' event)
+    ready = false;
+
+    // The horizontal and vertical index of the currently active slide
+    indexh;
+    indexv;
+
+    // The previous and current slide HTML elements
+    previousSlide;
+    currentSlide;
+
+    // Remember which directions that the user has navigated towards
+    navigationHistory = {
+        hasNavigatedHorizontally: false,
+        hasNavigatedVertically: false
+    };
+
+    // Slides may have a data-state attribute which we pick up and apply
+    // as a class to the body. This list contains the combined state of
+    // all current slides.
+    state = [];
+
+    // The current scale of the presentation (see width/height config)
+    scale = 1;
+
+    // CSS transform that is currently applied to the slides container,
+    // split into two groups
+    slidesTransform = { layout: '', overview: '' };
+
+    // Cached references to DOM elements
+    dom = {};
+
+    // Flags if the interaction event listeners are bound
+    eventsAreBound = false;
+
+    // The current slide transition state; idle or running
+    transition = 'idle';
+
+    // The current auto-slide duration
+    autoSlide = 0;
+
+    // Auto slide properties
+    autoSlidePlayer;
+    autoSlideTimeout = 0;
+    autoSlideStartTime = -1;
+    autoSlidePaused = false;
+
+    // Controllers for different aspects of our presentation. They're
+    // all given direct references to this Deck instance since there
+    // may be multiple presentations running in parallel.
+
+    deckElement = {};
+
+    constructor(revealElement, options) {
+        this.deckElement = revealElement;
+        this.options = options;
+
+        this.slideContent = new SlideContent(this);
+        this.slideContent.load.bind(this.slideContent);
+        this.slideContent.unload.bind(this.slideContent);
+
+        this.slideNumber = new SlideNumber(this);
+
+        this.autoAnimate = new AutoAnimate(this);
+
+        this.backgrounds = new Backgrounds(this);
+
+        this.fragments = new Fragments(this);
+        this.fragments.sync.bind(this.fragments);
+        this.fragments.goto.bind(this.fragments);
+        this.fragments.prev.bind(this.fragments);
+        this.fragments.next.bind(this.fragments);
+        this.fragments.availableRoutes.bind(this.fragments);
+
+        this.overview = new Overview(this);
+        this.overview.toggle.bind(this.overview);
+        this.overview.isActive.bind(this.overview);
+
+        this.keyboard = new Keyboard(this);
+        this.keyboard.addKeyBinding.bind(this.keyboard);
+        this.keyboard.removeKeyBinding.bind(this.keyboard);
+        this.keyboard.registerKeyboardShortcut.bind(this.keyboard);
+
+        this.location = new Location(this);
+
+        this.controls = new Controls(this);
+
+        this.progress = new Progress(this);
+
+        this.pointer = new Pointer(this);
+
+        this.plugins = new Plugins(this);
+        this.plugins.registerPlugin.bind(this.plugins);
+        this.plugins.hasPlugin.bind(this.plugins);
+        this.plugins.getPlugin.bind(this.plugins);
+        this.plugins.getRegisteredPlugins.bind(this.plugins);
+
+        this.print = new Print(this);
+
+
+        this.focus = new Focus(this);
+        this.focus.isFocused.bind(this.focus);
+
+        this.touch = new Touch(this);
+
+        this.notes = new Notes(this);
+        this.notes.getSlideNotes.bind(this.notes);
+        this.notes.isSpeakerNotesWindow.bind(this.notes)
     }
 
-    const Reveal = {};
 
-    // Configuration defaults, can be overridden at initialization time
-    let config = {},
+    //====================
+    // The public  API
 
-        // Flags if  is loaded (has dispatched the 'ready' event)
-        ready = false,
+    isPrintingPDF() {
+            this.print.isPrintingPDF.bind(this.print);
+        }
+        //====================
 
-        // The horizontal and vertical index of the currently active slide
-        indexh,
-        indexv,
-
-        // The previous and current slide HTML elements
-        previousSlide,
-        currentSlide,
-
-        // Remember which directions that the user has navigated towards
-        navigationHistory = {
-            hasNavigatedHorizontally: false,
-            hasNavigatedVertically: false
-        },
-
-        // Slides may have a data-state attribute which we pick up and apply
-        // as a class to the body. This list contains the combined state of
-        // all current slides.
-        state = [],
-
-        // The current scale of the presentation (see width/height config)
-        scale = 1,
-
-        // CSS transform that is currently applied to the slides container,
-        // split into two groups
-        slidesTransform = { layout: '', overview: '' },
-
-        // Cached references to DOM elements
-        dom = {},
-
-        // Flags if the interaction event listeners are bound
-        eventsAreBound = false,
-
-        // The current slide transition state; idle or running
-        transition = 'idle',
-
-        // The current auto-slide duration
-        autoSlide = 0,
-
-        // Auto slide properties
-        autoSlidePlayer,
-        autoSlideTimeout = 0,
-        autoSlideStartTime = -1,
-        autoSlidePaused = false,
-
-        // Controllers for different aspects of our presentation. They're
-        // all given direct references to this Reveal instance since there
-        // may be multiple presentations running in parallel.
-        slideContent = new SlideContent(Reveal),
-        slideNumber = new SlideNumber(Reveal),
-        autoAnimate = new AutoAnimate(Reveal),
-        backgrounds = new Backgrounds(Reveal),
-        fragments = new Fragments(Reveal),
-        overview = new Overview(Reveal),
-        keyboard = new Keyboard(Reveal),
-        location = new Location(Reveal),
-        controls = new Controls(Reveal),
-        progress = new Progress(Reveal),
-        pointer = new Pointer(Reveal),
-        plugins = new Plugins(Reveal),
-        print = new Print(Reveal),
-        focus = new Focus(Reveal),
-        touch = new Touch(Reveal),
-        notes = new Notes(Reveal);
-
-    /**
-     * Starts up the presentation.
-     */
-    function initialize(initOptions) {
+    initialize(initOptions) {
         // Cache references to key DOM elements
-        dom.wrapper = revealElement;
-        dom.slides = revealElement.querySelector('.slides');
+        this.dom.wrapper = this.deckElement;
+        this.dom.slides = this.deckElement.querySelector('.slides');
         // Compose our config object in order of increasing precedence:
         // 1. Default  options
-        // 2. Options provided via Reveal.configure() prior to
+        // 2. Options provided via Deck.configure() prior to
         //    initialization
-        // 3. Options passed to the Reveal constructor
-        // 4. Options passed to Reveal.initialize
+        // 3. Options passed to the Deck constructor
+        // 4. Options passed to Deck.initialize
         // 5. Query params
-        config = {...defaultConfig, ...config, ...options, ...initOptions, ...getQueryHash() };
-        setViewport();
+        this.config = {...defaultConfig, ...this.options, ...initOptions, ...getQueryHash() };
+        this.setViewport();
         // Force a layout when the whole page, incl fonts, has loaded
-        window.addEventListener('load', layout, false);
+        window.addEventListener('load', () => {
+            this.layout();
+        }, false);
         // Register plugins and load dependencies, then move on to #start()
-        plugins.load(config.plugins, config.dependencies).then(start);
-        return new Promise(resolve => Reveal.on('ready', resolve));
+        this.plugins.load(this.config.plugins, this.config.dependencies).then(() => {
+            console.log(`plugins loaded. getting started...`);
+            this.start()
+        });
+        return new Promise(resolve => this.on('ready', resolve));
     }
 
     /**
      * Encase the presentation in a  viewport. The
      * extent of the viewport differs based on configuration.
      */
-    function setViewport() {
+    setViewport() {
         // Embedded decks use the reveal element as their viewport
-        if (config.embedded === true) {
-            dom.viewport = closest(revealElement, '.reveal-viewport') || revealElement;
+        if (this.config.embedded === true) {
+            this.dom.viewport = closest(revealElement, '.reveal-viewport') || revealElement;
         }
         // Full-page decks use the body as their viewport
         else {
-            dom.viewport = document.body;
+            this.dom.viewport = document.body;
             document.documentElement.classList.add('reveal-full-page');
         }
-        dom.viewport.classList.add('reveal-viewport');
+        this.dom.viewport.classList.add('reveal-viewport');
     }
 
     /**
      * Starts up  by binding input events and navigating
      * to the current URL deeplink if there is one.
      */
-    function start() {
-        ready = true;
+    start() {
+        this.ready = true;
         // Remove slides hidden with data-visibility
-        removeHiddenSlides();
+        this.removeHiddenSlides();
         // Make sure we've got all the DOM elements we need
-        setupDOM();
+        this.setupDOM();
         // Listen to messages posted to this window
-        setupPostMessage();
+        this.setupPostMessage();
         // Prevent the slides from being scrolled out of view
-        setupScrollPrevention();
+        this.setupScrollPrevention();
         // Resets all vertical slides so that only the first is visible
-        resetVerticalSlides();
+        this.resetVerticalSlides();
         // Updates the presentation to match the current configuration values
-        configure();
+        this.configure();
         // Read the initial hash
-        location.readURL();
+        this.location.readURL();
         // Create slide backgrounds
-        backgrounds.update(true);
+        this.backgrounds.update(true);
         // Notify listeners that the presentation is ready but use a 1ms
         // timeout to ensure it's not fired synchronously after #initialize()
+        const that = this;
         setTimeout(() => {
             // Enable transitions now that we're loaded
-            dom.slides.classList.remove('no-transition');
-            dom.wrapper.classList.add('ready');
-            dispatchEvent({
+            that.dom.slides.classList.remove('no-transition');
+            that.dom.wrapper.classList.add('ready');
+            const indexh = that.indexh;
+            const indexv = that.indexv;
+            const currentSlide = that.currentSlide;
+            const target = this.dom.wrapper;
+            that.dispatchEvent({
+                target: target,
                 type: 'ready',
                 data: {
                     indexh,
@@ -4768,17 +4873,18 @@ const Deck = function(revealElement, options) {
                     currentSlide
                 }
             });
+            this.dispatchPostMessage('ready')
         }, 1);
         // Special setup and config is required when printing to PDF
-        if (print.isPrintingPDF()) {
-            removeEventListeners();
+        if (this.print.isPrintingPDF()) {
+            this.removeEventListeners();
             // The document needs to have loaded for the PDF layout
             // measurements to be accurate
             if (document.readyState === 'complete') {
-                print.setupPDF();
+                this.print.setupPDF();
             } else {
                 window.addEventListener('load', () => {
-                    print.setupPDF();
+                    this.print.setupPDF();
                 });
             }
         }
@@ -4792,9 +4898,9 @@ const Deck = function(revealElement, options) {
      * If you want to show all hidden slides, initialize
      *  with showHiddenSlides set to true.
      */
-    function removeHiddenSlides() {
-        if (!config.showHiddenSlides) {
-            queryAll(dom.wrapper, 'section[data-visibility="hidden"]').forEach(slide => {
+    removeHiddenSlides() {
+        if (!this.config.showHiddenSlides) {
+            queryAll(this.dom.wrapper, 'section[data-visibility="hidden"]').forEach(slide => {
                 slide.parentNode.removeChild(slide);
             });
         }
@@ -4805,33 +4911,33 @@ const Deck = function(revealElement, options) {
      * required by the presentation. If a required element is
      * not found, it is created.
      */
-    function setupDOM() {
-        // Prevent transitions while we're loading
-        dom.slides.classList.add('no-transition');
-        if (isMobile) {
-            dom.wrapper.classList.add('no-hover');
-        } else {
-            dom.wrapper.classList.remove('no-hover');
+    setupDOM() {
+            // Prevent transitions while we're loading
+            this.dom.slides.classList.add('no-transition');
+            if (isMobile) {
+                this.dom.wrapper.classList.add('no-hover');
+            } else {
+                this.dom.wrapper.classList.remove('no-hover');
+            }
+            this.backgrounds.render();
+            this.slideNumber.render();
+            this.controls.render();
+            this.progress.render();
+            this.notes.render();
+            // Overlay graphic which is displayed during the paused mode
+            this.dom.pauseOverlay = createSingletonNode(this.dom.wrapper, 'div', 'pause-overlay', this.config.controls ? '<button class="resume-button">Resume presentation</button>' : null);
+            this.dom.statusElement = this.createStatusElement();
+            this.dom.wrapper.setAttribute('role', 'application');
         }
-        backgrounds.render();
-        slideNumber.render();
-        controls.render();
-        progress.render();
-        notes.render();
-        // Overlay graphic which is displayed during the paused mode
-        dom.pauseOverlay = createSingletonNode(dom.wrapper, 'div', 'pause-overlay', config.controls ? '<button class="resume-button">Resume presentation</button>' : null);
-        dom.statusElement = createStatusElement();
-        dom.wrapper.setAttribute('role', 'application');
-    }
-    /**
-     * Creates a hidden div with role aria-live to announce the
-     * current slide content. Hide the div off-screen to make it
-     * available only to Assistive Technologies.
-     *
-     * @return {HTMLElement}
-     */
-    function createStatusElement() {
-        let statusElement = dom.wrapper.querySelector('.aria-status');
+        /**
+         * Creates a hidden div with role aria-live to announce the
+         * current slide content. Hide the div off-screen to make it
+         * available only to Assistive Technologies.
+         *
+         * @return {HTMLElement}
+         */
+    createStatusElement() {
+        let statusElement = this.dom.wrapper.querySelector('.aria-status');
         if (!statusElement) {
             statusElement = document.createElement('div');
             statusElement.style.position = 'absolute';
@@ -4842,7 +4948,7 @@ const Deck = function(revealElement, options) {
             statusElement.classList.add('aria-status');
             statusElement.setAttribute('aria-live', 'polite');
             statusElement.setAttribute('aria-atomic', 'true');
-            dom.wrapper.appendChild(statusElement);
+            this.dom.wrapper.appendChild(statusElement);
         }
         return statusElement;
     }
@@ -4850,8 +4956,8 @@ const Deck = function(revealElement, options) {
     /**
      * Announces the given text to screen readers.
      */
-    function announceStatus(value) {
-        dom.statusElement.textContent = value;
+    announceStatus(value) {
+        this.dom.statusElement.textContent = value;
     }
 
     /**
@@ -4859,7 +4965,8 @@ const Deck = function(revealElement, options) {
      * that can be announced to a screen reader. Hidden
      * elements are excluded.
      */
-    function getStatusText(node) {
+    getStatusText(node) {
+        const that = this;
         let text = '';
         // Text node
         if (node.nodeType === 3) {
@@ -4871,7 +4978,7 @@ const Deck = function(revealElement, options) {
             let isDisplayHidden = window.getComputedStyle(node)['display'] === 'none';
             if (isAriaHidden !== 'true' && !isDisplayHidden) {
                 Array.from(node.childNodes).forEach(child => {
-                    text += getStatusText(child);
+                    text += that.getStatusText(child);
                 });
             }
         }
@@ -4888,7 +4995,8 @@ const Deck = function(revealElement, options) {
      * CSS (we already do) so we have to resort to repeatedly
      * checking if the slides have been offset :(
      */
-    function setupScrollPrevention() {
+    setupScrollPrevention() {
+        const dom = this.dom;
         setInterval(() => {
             if (dom.wrapper.scrollTop !== 0 || dom.wrapper.scrollLeft !== 0) {
                 dom.wrapper.scrollTop = 0;
@@ -4907,20 +5015,20 @@ const Deck = function(revealElement, options) {
      *   args: [ 2 ]
      * }), '*' );
      */
-    function setupPostMessage() {
-        if (config.postMessage) {
+    setupPostMessage() {
+        if (this.config.postMessage) {
             window.addEventListener('message', event => {
                 let data = event.data;
                 // Make sure we're dealing with JSON
                 if (typeof data === 'string' && data.charAt(0) === '{' && data.charAt(data.length - 1) === '}') {
                     data = JSON.parse(data);
                     // Check if the requested method can be found
-                    if (data.method && typeof Reveal[data.method] === 'function') {
+                    if (data.method && typeof Deck[data.method] === 'function') {
                         if (POST_MESSAGE_METHOD_BLACKLIST.test(data.method) === false) {
-                            const result = Reveal[data.method].apply(Reveal, data.args);
+                            const result = Deck[data.method].apply(Deck, data.args);
                             // Dispatch a postMessage event with the returned value from
                             // our method invocation for getter functions
-                            dispatchPostMessage('callback', { method: data.method, result: result });
+                            this.dispatchPostMessage('callback', { method: data.method, result: result });
                         } else {
                             console.warn(': "' + data.method + '" is is blacklisted from the postMessage API');
                         }
@@ -4936,121 +5044,121 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} options
      */
-    function configure(options) {
-        const oldConfig = {...config }
+    configure(options) {
+        const oldConfig = {...this.config }
             // New config options may be passed when this method
             // is invoked through the API after initialization
-        if (typeof options === 'object') extend(config, options);
+        if (typeof options === 'object') extend(this.config, options);
         // Abort if  hasn't finished loading, config
         // changes will be applied automatically once ready
-        if (Reveal.isReady() === false) return;
-        const numberOfSlides = dom.wrapper.querySelectorAll(SLIDES_SELECTOR).length;
+        if (this.isReady === false) return;
+        const numberOfSlides = this.dom.wrapper.querySelectorAll(SLIDES_SELECTOR).length;
         // The transition is added as a class on the .reveal element
-        dom.wrapper.classList.remove(oldConfig.transition);
-        dom.wrapper.classList.add(config.transition);
-        dom.wrapper.setAttribute('data-transition-speed', config.transitionSpeed);
-        dom.wrapper.setAttribute('data-background-transition', config.backgroundTransition);
+        this.dom.wrapper.classList.remove(oldConfig.transition);
+        this.dom.wrapper.classList.add(this.config.transition);
+        this.dom.wrapper.setAttribute('data-transition-speed', this.config.transitionSpeed);
+        this.dom.wrapper.setAttribute('data-background-transition', this.config.backgroundTransition);
         // Expose our configured slide dimensions as custom props
-        dom.viewport.style.setProperty('--slide-width', config.width + 'px');
-        dom.viewport.style.setProperty('--slide-height', config.height + 'px');
-        if (config.shuffle) {
-            shuffle();
+        this.dom.viewport.style.setProperty('--slide-width', this.config.width + 'px');
+        this.dom.viewport.style.setProperty('--slide-height', this.config.height + 'px');
+        if (this.config.shuffle) {
+            this.shuffle();
         }
-        toggleClass(dom.wrapper, 'embedded', config.embedded);
-        toggleClass(dom.wrapper, 'rtl', config.rtl);
-        toggleClass(dom.wrapper, 'center', config.center);
+        toggleClass(this.dom.wrapper, 'embedded', this.config.embedded);
+        toggleClass(this.dom.wrapper, 'rtl', this.config.rtl);
+        toggleClass(this.dom.wrapper, 'center', this.config.center);
         // Exit the paused mode if it was configured off
-        if (config.pause === false) {
-            resume();
+        if (this.config.pause === false) {
+            this.resume();
         }
         // Iframe link previews
-        if (config.previewLinks) {
-            enablePreviewLinks();
-            disablePreviewLinks('[data-preview-link=false]');
+        if (this.config.previewLinks) {
+            this.enablePreviewLinks();
+            this.disablePreviewLinks('[data-preview-link=false]');
         } else {
-            disablePreviewLinks();
-            enablePreviewLinks('[data-preview-link]:not([data-preview-link=false])');
+            this.disablePreviewLinks();
+            this.enablePreviewLinks('[data-preview-link]:not([data-preview-link=false])');
         }
         // Reset all changes made by auto-animations
-        autoAnimate.reset();
+        this.autoAnimate.reset();
         // Remove existing auto-slide controls
-        if (autoSlidePlayer) {
-            autoSlidePlayer.destroy();
-            autoSlidePlayer = null;
+        if (this.autoSlidePlayer) {
+            this.autoSlidePlayer.destroy();
+            this.autoSlidePlayer = null;
         }
         // Generate auto-slide controls if needed
-        if (numberOfSlides > 1 && config.autoSlide && config.autoSlideStoppable) {
-            autoSlidePlayer = new Playback(dom.wrapper, () => {
+        if (this.numberOfSlides > 1 && this.config.autoSlide && this.config.autoSlideStoppable) {
+            this.autoSlidePlayer = new Playback(dom.wrapper, () => {
                 return Math.min(Math.max((Date.now() - autoSlideStartTime) / autoSlide, 0), 1);
             });
-            autoSlidePlayer.on('click', onAutoSlidePlayerClick);
-            autoSlidePaused = false;
+            this.autoSlidePlayer.on('click', onAutoSlidePlayerClick);
+            this.autoSlidePaused = false;
         }
         // Add the navigation mode to the DOM so we can adjust styling
-        if (config.navigationMode !== 'default') {
-            dom.wrapper.setAttribute('data-navigation-mode', config.navigationMode);
+        if (this.config.navigationMode !== 'default') {
+            this.dom.wrapper.setAttribute('data-navigation-mode', this.config.navigationMode);
         } else {
-            dom.wrapper.removeAttribute('data-navigation-mode');
+            this.dom.wrapper.removeAttribute('data-navigation-mode');
         }
-        notes.configure(config, oldConfig);
-        focus.configure(config, oldConfig);
-        pointer.configure(config, oldConfig);
-        controls.configure(config, oldConfig);
-        progress.configure(config, oldConfig);
-        keyboard.configure(config, oldConfig);
-        fragments.configure(config, oldConfig);
-        slideNumber.configure(config, oldConfig);
-        sync();
+        this.notes.configure(this.config, oldConfig);
+        this.focus.configure(this.config, oldConfig);
+        this.pointer.configure(this.config, oldConfig);
+        this.controls.configure(this.config, oldConfig);
+        this.progress.configure(this.config, oldConfig);
+        this.keyboard.configure(this.config, oldConfig);
+        this.fragments.configure(this.config, oldConfig);
+        this.slideNumber.configure(this.config, oldConfig);
+        this.sync();
     }
 
     /**
      * Binds all event listeners.
      */
-    function addEventListeners() {
-        eventsAreBound = true;
-        window.addEventListener('resize', onWindowResize, false);
-        if (config.touch) touch.bind();
-        if (config.keyboard) keyboard.bind();
-        if (config.progress) progress.bind();
-        if (config.respondToHashChanges) location.bind();
-        controls.bind();
-        focus.bind();
-        dom.slides.addEventListener('transitionend', onTransitionEnd, false);
-        dom.pauseOverlay.addEventListener('click', resume, false);
-        if (config.focusBodyOnPageVisibilityChange) {
-            document.addEventListener('visibilitychange', onPageVisibilityChange, false);
+    addEventListeners() {
+        this.eventsAreBound = true;
+        window.addEventListener('resize', this.onWindowResize(), false);
+        if (this.config.touch) this.touch.bind();
+        if (this.config.keyboard) this.keyboard.bind();
+        if (this.config.progress) this.progress.bind();
+        if (this.config.respondToHashChanges) this.location.bind();
+        this.controls.bind();
+        this.focus.bind();
+        this.dom.slides.addEventListener('transitionend', this.onTransitionEnd(), false);
+        this.dom.pauseOverlay.addEventListener('click', this.resume(), false);
+        if (this.config.focusBodyOnPageVisibilityChange) {
+            document.addEventListener('visibilitychange', this.onPageVisibilityChange(), false);
         }
     }
 
     /**
      * Unbinds all event listeners.
      */
-    function removeEventListeners() {
-        eventsAreBound = false;
-        touch.unbind();
-        focus.unbind();
-        keyboard.unbind();
-        controls.unbind();
-        progress.unbind();
-        location.unbind();
-        window.removeEventListener('resize', onWindowResize, false);
-        dom.slides.removeEventListener('transitionend', onTransitionEnd, false);
-        dom.pauseOverlay.removeEventListener('click', resume, false);
+    removeEventListeners() {
+        this.eventsAreBound = false;
+        this.touch.unbind();
+        this.focus.unbind();
+        this.keyboard.unbind();
+        this.controls.unbind();
+        this.progress.unbind();
+        this.location.unbind();
+        window.removeEventListener('resize', this.onWindowResize, false);
+        this.dom.slides.removeEventListener('transitionend', this.onTransitionEnd, false);
+        this.dom.pauseOverlay.removeEventListener('click', this.resume, false);
     }
 
     /**
      * Adds a listener to one of our custom  events,
      * like slidechanged.
      */
-    function on(type, listener, useCapture) {
-        revealElement.addEventListener(type, listener, useCapture);
+    on(type, listener, useCapture) {
+        this.deckElement.addEventListener(type, listener, useCapture);
     }
 
     /**
      * Unsubscribes from a  event.
      */
-    function off(type, listener, useCapture) {
-        revealElement.removeEventListener(type, listener, useCapture);
+    off(type, listener, useCapture) {
+        this.deckElement.removeEventListener(type, listener, useCapture);
     }
 
     /**
@@ -5060,15 +5168,15 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} transforms
      */
-    function transformSlides(transforms) {
+    transformSlides(transforms) {
         // Pick up new transforms from arguments
-        if (typeof transforms.layout === 'string') slidesTransform.layout = transforms.layout;
-        if (typeof transforms.overview === 'string') slidesTransform.overview = transforms.overview;
+        if (typeof transforms.layout === 'string') this.slidesTransform.layout = transforms.layout;
+        if (typeof transforms.overview === 'string') this.slidesTransform.overview = transforms.overview;
         // Apply the transforms to the slides container
-        if (slidesTransform.layout) {
-            transformElement(dom.slides, slidesTransform.layout + ' ' + slidesTransform.overview);
+        if (this.slidesTransform.layout) {
+            transformElement(this.dom.slides, this.slidesTransform.layout + ' ' + this.slidesTransform.overview);
         } else {
-            transformElement(dom.slides, slidesTransform.overview);
+            transformElement(this.dom.slides, this.slidesTransform.overview);
         }
     }
 
@@ -5076,23 +5184,22 @@ const Deck = function(revealElement, options) {
      * Dispatches an event of the specified type from the
      * reveal DOM element.
      */
-    function dispatchEvent({ target = dom.wrapper, type, data, bubbles = true }) {
+    dispatchEvent({ target, type, data, bubbles = true }) {
         let event = document.createEvent('HTMLEvents', 1, 2);
         event.initEvent(type, bubbles, true);
         extend(event, data);
-        target.dispatchEvent(event);
-        if (target === dom.wrapper) {
-            // If we're in an iframe, post each  event to the
-            // parent window. Used by the notes plugin
-            dispatchPostMessage(type);
+        if (target === undefined) {
+            console.error(`dispatching event ${type} from undefined target?`)
+            return
         }
+        target.dispatchEvent(event);
     }
 
     /**
      * Dispatched a postMessage of the given type from our window.
      */
-    function dispatchPostMessage(type, data) {
-        if (config.postMessageEvents && window.parent !== window.self) {
+    dispatchPostMessage(type, data) {
+        if (this.config.postMessageEvents && window.parent !== window.self) {
             let message = {
                 namespace: 'reveal',
                 eventName: type,
@@ -5108,8 +5215,9 @@ const Deck = function(revealElement, options) {
      *
      * @param {string} [selector=a] - selector for anchors
      */
-    function enablePreviewLinks(selector = 'a') {
-        Array.from(dom.wrapper.querySelectorAll(selector)).forEach(element => {
+    enablePreviewLinks(selector = 'a') {
+        const onPreviewLinkClicked = this.onPreviewLinkClicked;
+        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(element => {
             if (/^(http|www)/gi.test(element.getAttribute('href'))) {
                 element.addEventListener('click', onPreviewLinkClicked, false);
             }
@@ -5119,8 +5227,9 @@ const Deck = function(revealElement, options) {
     /**
      * Unbind preview frame links.
      */
-    function disablePreviewLinks(selector = 'a') {
-        Array.from(dom.wrapper.querySelectorAll(selector)).forEach(element => {
+    disablePreviewLinks(selector = 'a') {
+        const onPreviewLinkClicked = this.onPreviewLinkClicked;
+        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(element => {
             if (/^(http|www)/gi.test(element.getAttribute('href'))) {
                 element.removeEventListener('click', onPreviewLinkClicked, false);
             }
@@ -5132,13 +5241,13 @@ const Deck = function(revealElement, options) {
      *
      * @param {string} url - url for preview iframe src
      */
-    function showPreview(url) {
-        closeOverlay();
-        dom.overlay = document.createElement('div');
-        dom.overlay.classList.add('overlay');
-        dom.overlay.classList.add('overlay-preview');
-        dom.wrapper.appendChild(dom.overlay);
-        dom.overlay.innerHTML =
+    showPreview(url) {
+        this.closeOverlay();
+        this.dom.overlay = document.createElement('div');
+        this.dom.overlay.classList.add('overlay');
+        this.dom.overlay.classList.add('overlay-preview');
+        this.dom.wrapper.appendChild(dom.overlay);
+        this.dom.overlay.innerHTML =
             `<header>
 				<a class="close" href="#"><span class="icon"></span></a>
 				<a class="external" href="${url}" target="_blank"><span class="icon"></span></a>
@@ -5150,15 +5259,15 @@ const Deck = function(revealElement, options) {
 					<span class="x-frame-error">Unable to load iframe. This is likely due to the site's policy (x-frame-options).</span>
 				</small>
 			</div>`;
-        dom.overlay.querySelector('iframe').addEventListener('load', event => {
+        this.dom.overlay.querySelector('iframe').addEventListener('load', event => {
             dom.overlay.classList.add('loaded');
         }, false);
-        dom.overlay.querySelector('.close').addEventListener('click', event => {
-            closeOverlay();
+        this.dom.overlay.querySelector('.close').addEventListener('click', event => {
+            this.closeOverlay();
             event.preventDefault();
         }, false);
         dom.overlay.querySelector('.external').addEventListener('click', event => {
-            closeOverlay();
+            this.closeOverlay();
         }, false);
     }
 
@@ -5169,14 +5278,14 @@ const Deck = function(revealElement, options) {
      * toggle logic and forcibly sets the desired state. True means
      * help is open, false means it's closed.
      */
-    function toggleHelp(override) {
+    toggleHelp(override) {
         if (typeof override === 'boolean') {
-            override ? showHelp() : closeOverlay();
+            override ? this.showHelp() : this.closeOverlay();
         } else {
-            if (dom.overlay) {
-                closeOverlay();
+            if (this.dom.overlay) {
+                this.closeOverlay();
             } else {
-                showHelp();
+                this.showHelp();
             }
         }
     }
@@ -5184,16 +5293,16 @@ const Deck = function(revealElement, options) {
     /**
      * Opens an overlay window with help material.
      */
-    function showHelp() {
-        if (config.help) {
-            closeOverlay();
-            dom.overlay = document.createElement('div');
-            dom.overlay.classList.add('overlay');
-            dom.overlay.classList.add('overlay-help');
-            dom.wrapper.appendChild(dom.overlay);
+    showHelp() {
+        if (this.config.help) {
+            this.closeOverlay();
+            this.dom.overlay = document.createElement('div');
+            this.dom.overlay.classList.add('overlay');
+            this.dom.overlay.classList.add('overlay-help');
+            this.dom.wrapper.appendChild(dom.overlay);
             let html = '<p class="title">Keyboard Shortcuts</p><br/>';
-            let shortcuts = keyboard.getShortcuts(),
-                bindings = keyboard.getBindings();
+            let shortcuts = this.keyboard.getShortcuts(),
+                bindings = this.keyboard.getBindings();
             html += '<table><th>KEY</th><th>ACTION</th>';
             for (let key in shortcuts) {
                 html += `<tr><td>${key}</td><td>${shortcuts[key]}</td></tr>`;
@@ -5205,7 +5314,7 @@ const Deck = function(revealElement, options) {
                 }
             }
             html += '</table>';
-            dom.overlay.innerHTML = `
+            this.dom.overlay.innerHTML = `
 				<header>
 					<a class="close" href="#"><span class="icon"></span></a>
 				</header>
@@ -5213,8 +5322,8 @@ const Deck = function(revealElement, options) {
 					<div class="viewport-inner">${html}</div>
 				</div>
 			`;
-            dom.overlay.querySelector('.close').addEventListener('click', event => {
-                closeOverlay();
+            this.dom.overlay.querySelector('.close').addEventListener('click', event => {
+                this.closeOverlay();
                 event.preventDefault();
             }, false);
         }
@@ -5223,10 +5332,10 @@ const Deck = function(revealElement, options) {
     /**
      * Closes any currently open overlay.
      */
-    function closeOverlay() {
-        if (dom.overlay) {
-            dom.overlay.parentNode.removeChild(dom.overlay);
-            dom.overlay = null;
+    closeOverlay() {
+        if (this.dom.overlay) {
+            this.dom.overlay.parentNode.removeChild(dom.overlay);
+            this.dom.overlay = null;
             return true;
         }
         return false;
@@ -5236,66 +5345,67 @@ const Deck = function(revealElement, options) {
      * Applies JavaScript-controlled layout rules to the
      * presentation.
      */
-    function layout() {
-        if (dom.wrapper && !print.isPrintingPDF()) {
-            if (!config.disableLayout) {
+    layout() {
+        if (this.dom.wrapper && !this.print.isPrintingPDF()) {
+            if (!this.config.disableLayout) {
                 // On some mobile devices '100vh' is taller than the visible
                 // viewport which leads to part of the presentation being
                 // cut off. To work around this we define our own '--vh' custom
                 // property where 100x adds up to the correct height.
                 //
                 // https://css-tricks.com/the-trick-to-viewport-units-on-mobile/
-                if (isMobile && !config.embedded) {
+                if (this.isMobile && !this.config.embedded) {
                     document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
                 }
-                const size = getComputedSlideSize();
-                const oldScale = scale;
+                const size = this.getComputedSlideSize();
+                const oldScale = this.scale;
                 // Layout the contents of the slides
-                layoutSlideContents(config.width, config.height);
-                dom.slides.style.width = size.width + 'px';
-                dom.slides.style.height = size.height + 'px';
+                this.layoutSlideContents(this.config.width, this.config.height);
+                this.dom.slides.style.width = size.width + 'px';
+                this.dom.slides.style.height = size.height + 'px';
                 // Determine scale of content to fit within available space
-                scale = Math.min(size.presentationWidth / size.width, size.presentationHeight / size.height);
+                this.scale = Math.min(size.presentationWidth / size.width, size.presentationHeight / size.height);
                 // Respect max/min scale settings
-                scale = Math.max(scale, config.minScale);
-                scale = Math.min(scale, config.maxScale);
+                this.scale = Math.max(this.scale, this.config.minScale);
+                this.scale = Math.min(this.scale, this.config.maxScale);
                 // Don't apply any scaling styles if scale is 1
-                if (scale === 1) {
-                    dom.slides.style.zoom = '';
-                    dom.slides.style.left = '';
-                    dom.slides.style.top = '';
-                    dom.slides.style.bottom = '';
-                    dom.slides.style.right = '';
-                    transformSlides({ layout: '' });
+                if (this.scale === 1) {
+                    this.dom.slides.style.zoom = '';
+                    this.dom.slides.style.left = '';
+                    this.dom.slides.style.top = '';
+                    this.dom.slides.style.bottom = '';
+                    this.dom.slides.style.right = '';
+                    this.transformSlides({ layout: '' });
                 } else {
                     // Zoom Scaling
                     // Content remains crisp no matter how much we scale. Side
                     // effects are minor differences in text layout and iframe
                     // viewports changing size. A 200x200 iframe viewport in a
                     // 2x zoomed presentation ends up having a 400x400 viewport.
-                    if (scale > 1 && supportsZoom && window.devicePixelRatio < 2) {
-                        dom.slides.style.zoom = scale;
-                        dom.slides.style.left = '';
-                        dom.slides.style.top = '';
-                        dom.slides.style.bottom = '';
-                        dom.slides.style.right = '';
-                        transformSlides({ layout: '' });
+                    if (this.scale > 1 && this.supportsZoom && window.devicePixelRatio < 2) {
+                        this.dom.slides.style.zoom = scale;
+                        this.dom.slides.style.left = '';
+                        this.dom.slides.style.top = '';
+                        this.dom.slides.style.bottom = '';
+                        this.dom.slides.style.right = '';
+                        this.transformSlides({ layout: '' });
                     }
                     // Transform Scaling
                     // Content layout remains the exact same when scaled up.
                     // Side effect is content becoming blurred, especially with
                     // high scale values on ldpi screens.
                     else {
-                        dom.slides.style.zoom = '';
-                        dom.slides.style.left = '50%';
-                        dom.slides.style.top = '50%';
-                        dom.slides.style.bottom = 'auto';
-                        dom.slides.style.right = 'auto';
-                        transformSlides({ layout: 'translate(-50%, -50%) scale(' + scale + ')' });
+                        this.dom.slides.style.zoom = '';
+                        this.dom.slides.style.left = '50%';
+                        this.dom.slides.style.top = '50%';
+                        this.dom.slides.style.bottom = 'auto';
+                        this.dom.slides.style.right = 'auto';
+                        this.transformSlides({ layout: 'translate(-50%, -50%) scale(' + this.scale + ')' });
                     }
                 }
                 // Select all slides, vertical and horizontal
-                const slides = Array.from(dom.wrapper.querySelectorAll(SLIDES_SELECTOR));
+                const slides = Array.from(this.dom.wrapper.querySelectorAll(SLIDES_SELECTOR));
+                const config = this.config;
                 for (let i = 0, len = slides.length; i < len; i++) {
                     const slide = slides[i];
                     // Don't bother updating invisible slides
@@ -5314,8 +5424,11 @@ const Deck = function(revealElement, options) {
                         slide.style.top = '';
                     }
                 }
-                if (oldScale !== scale) {
-                    dispatchEvent({
+                if (oldScale !== this.scale) {
+                    const scale = this.scale;
+                    const target = this.dom.wrapper;
+                    this.dispatchEvent({
+                        target: target,
                         type: 'resize',
                         data: {
                             oldScale,
@@ -5323,12 +5436,13 @@ const Deck = function(revealElement, options) {
                             size
                         }
                     });
+                    this.dispatchPostMessage('resize')
                 }
             }
-            progress.update();
-            backgrounds.updateParallax();
-            if (overview.isActive()) {
-                overview.update();
+            this.progress.update();
+            this.backgrounds.updateParallax();
+            if (this.overview.isActive()) {
+                this.overview.update();
             }
         }
     }
@@ -5340,9 +5454,9 @@ const Deck = function(revealElement, options) {
      * @param {string|number} width
      * @param {string|number} height
      */
-    function layoutSlideContents(width, height) {
+    layoutSlideContents(width, height) {
         // Handle sizing of elements with the 'r-stretch' class
-        queryAll(dom.slides, 'section > .stretch, section > .r-stretch').forEach(element => {
+        queryAll(this.dom.slides, 'section > .stretch, section > .r-stretch').forEach(element => {
             // Determine how much vertical space we can use
             let remainingHeight = getRemainingHeight(element, height);
             // Consider the aspect ratio of media elements
@@ -5367,18 +5481,18 @@ const Deck = function(revealElement, options) {
      * @param {number} [presentationWidth=dom.wrapper.offsetWidth]
      * @param {number} [presentationHeight=dom.wrapper.offsetHeight]
      */
-    function getComputedSlideSize(presentationWidth, presentationHeight) {
+    getComputedSlideSize(presentationWidth, presentationHeight) {
         const size = {
             // Slide size
-            width: config.width,
-            height: config.height,
+            width: this.config.width,
+            height: this.config.height,
             // Presentation size
-            presentationWidth: presentationWidth || dom.wrapper.offsetWidth,
-            presentationHeight: presentationHeight || dom.wrapper.offsetHeight
+            presentationWidth: this.presentationWidth || this.dom.wrapper.offsetWidth,
+            presentationHeight: this.presentationHeight || this.dom.wrapper.offsetHeight
         };
         // Reduce available space by margin
-        size.presentationWidth -= (size.presentationWidth * config.margin);
-        size.presentationHeight -= (size.presentationHeight * config.margin);
+        size.presentationWidth -= (size.presentationWidth * this.config.margin);
+        size.presentationHeight -= (size.presentationHeight * this.config.margin);
         // Slide width may be a percentage of available width
         if (typeof size.width === 'string' && /%$/.test(size.width)) {
             size.width = parseInt(size.width, 10) / 100 * size.presentationWidth;
@@ -5398,7 +5512,7 @@ const Deck = function(revealElement, options) {
      * @param {HTMLElement} stack The vertical stack element
      * @param {string|number} [v=0] Index to memorize
      */
-    function setPreviousVerticalIndex(stack, v) {
+    setPreviousVerticalIndex(stack, v) {
         if (typeof stack === 'object' && typeof stack.setAttribute === 'function') {
             stack.setAttribute('data-previous-indexv', v || 0);
         }
@@ -5411,7 +5525,7 @@ const Deck = function(revealElement, options) {
      *
      * @param {HTMLElement} stack The vertical stack element
      */
-    function getPreviousVerticalIndex(stack) {
+    getPreviousVerticalIndex(stack) {
         if (typeof stack === 'object' && typeof stack.setAttribute === 'function' && stack.classList.contains('stack')) {
             // Prefer manually defined start-indexv
             const attributeName = stack.hasAttribute('data-start-indexv') ? 'data-start-indexv' : 'data-previous-indexv';
@@ -5428,7 +5542,7 @@ const Deck = function(revealElement, options) {
      * orientation of
      * @return {Boolean}
      */
-    function isVerticalSlide(slide = currentSlide) {
+    isVerticalSlide(slide = this.currentSlide) {
         return slide && slide.parentNode && !!slide.parentNode.nodeName.match(/section/i);
     }
 
@@ -5436,10 +5550,10 @@ const Deck = function(revealElement, options) {
      * Returns true if we're on the last slide in the current
      * vertical stack.
      */
-    function isLastVerticalSlide() {
-        if (currentSlide && isVerticalSlide(currentSlide)) {
+    isLastVerticalSlide() {
+        if (this.currentSlide && this.isVerticalSlide(this.currentSlide)) {
             // Does this slide have a next sibling?
-            if (currentSlide.nextElementSibling) return false;
+            if (this.currentSlide.nextElementSibling) return false;
             return true;
         }
         return false;
@@ -5449,8 +5563,8 @@ const Deck = function(revealElement, options) {
      * Returns true if we're currently on the first slide in
      * the presentation.
      */
-    function isFirstSlide() {
-        return indexh === 0 && indexv === 0;
+    isFirstSlide() {
+        return this.indexh === 0 && this.indexv === 0;
     }
 
     /**
@@ -5459,12 +5573,12 @@ const Deck = function(revealElement, options) {
      * consider this the last slide if it's at the end of the
      * stack.
      */
-    function isLastSlide() {
-        if (currentSlide) {
+    isLastSlide() {
+        if (this.currentSlide) {
             // Does this slide have a next sibling?
-            if (currentSlide.nextElementSibling) return false;
+            if (this.currentSlide.nextElementSibling) return false;
             // If it's vertical, does its parent have a next sibling?
-            if (isVerticalSlide(currentSlide) && currentSlide.parentNode.nextElementSibling) return false;
+            if (this.isVerticalSlide(this.currentSlide) && this.currentSlide.parentNode.nextElementSibling) return false;
             return true;
         }
         return false;
@@ -5474,13 +5588,18 @@ const Deck = function(revealElement, options) {
      * Enters the paused mode which fades everything on screen to
      * black.
      */
-    function pause() {
-        if (config.pause) {
-            const wasPaused = dom.wrapper.classList.contains('paused');
-            cancelAutoSlide();
-            dom.wrapper.classList.add('paused');
+    pause() {
+        if (this.config.pause) {
+            const wasPaused = this.dom.wrapper.classList.contains('paused');
+            this.cancelAutoSlide();
+            this.dom.wrapper.classList.add('paused');
             if (wasPaused === false) {
-                dispatchEvent({ type: 'paused' });
+                const target = this.dom.wrapper;
+                this.dispatchEvent({
+                    target: target,
+                    type: 'paused'
+                });
+                this.dispatchPostMessage('paused');
             }
         }
     }
@@ -5488,23 +5607,28 @@ const Deck = function(revealElement, options) {
     /**
      * Exits from the paused mode.
      */
-    function resume() {
-        const wasPaused = dom.wrapper.classList.contains('paused');
-        dom.wrapper.classList.remove('paused');
-        cueAutoSlide();
+    resume() {
+        const wasPaused = this.dom.wrapper.classList.contains('paused');
+        this.dom.wrapper.classList.remove('paused');
+        this.cueAutoSlide();
         if (wasPaused) {
-            dispatchEvent({ type: 'resumed' });
+            const target = this.dom.wrapper;
+            this.dispatchEvent({
+                target: target,
+                type: 'resumed'
+            });
+            this.dispatchPostMessage('resumed')
         }
     }
 
     /**
      * Toggles the paused mode on and off.
      */
-    function togglePause(override) {
+    togglePause(override) {
         if (typeof override === 'boolean') {
-            override ? pause() : resume();
+            override ? this.pause() : this.resume();
         } else {
-            isPaused() ? resume() : pause();
+            this.isPaused() ? this.resume() : this.pause();
         }
     }
 
@@ -5513,8 +5637,8 @@ const Deck = function(revealElement, options) {
      *
      * @return {Boolean}
      */
-    function isPaused() {
-        return dom.wrapper.classList.contains('paused');
+    isPaused() {
+        return this.dom.wrapper.classList.contains('paused');
     }
 
     /**
@@ -5524,11 +5648,11 @@ const Deck = function(revealElement, options) {
      * True means autoplay starts, false means it stops.
      */
 
-    function toggleAutoSlide(override) {
+    toggleAutoSlide(override) {
         if (typeof override === 'boolean') {
-            override ? resumeAutoSlide() : pauseAutoSlide();
+            override ? this.resumeAutoSlide() : this.pauseAutoSlide();
         } else {
-            autoSlidePaused ? resumeAutoSlide() : pauseAutoSlide();
+            this.autoSlidePaused ? this.resumeAutoSlide() : this.pauseAutoSlide();
         }
     }
 
@@ -5537,8 +5661,8 @@ const Deck = function(revealElement, options) {
      *
      * @return {Boolean}
      */
-    function isAutoSliding() {
-        return !!(autoSlide && !autoSlidePaused);
+    isAutoSliding() {
+        return !!(this.autoSlide && !this.autoSlidePaused);
     }
 
     /**
@@ -5552,178 +5676,192 @@ const Deck = function(revealElement, options) {
      * target slide to activate
      * @param {number} [o] Origin for use in multimaster environments
      */
-    function slide(h, v, f, o) {
-        // Remember where we were at before
-        previousSlide = currentSlide;
-        // Query all horizontal slides in the deck
-        const horizontalSlides = dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR);
-        // Abort if there are no slides
-        if (horizontalSlides.length === 0) return;
-        // If no vertical index is specified and the upcoming slide is a
-        // stack, resume at its previous vertical index
-        if (v === undefined && !overview.isActive()) {
-            v = getPreviousVerticalIndex(horizontalSlides[h]);
-        }
-        // If we were on a vertical stack, remember what vertical index
-        // it was on so we can resume at the same position when returning
-        if (previousSlide && previousSlide.parentNode && previousSlide.parentNode.classList.contains('stack')) {
-            setPreviousVerticalIndex(previousSlide.parentNode, indexv);
-        }
-        // Remember the state before this slide
-        const stateBefore = state.concat();
-        // Reset the state array
-        state.length = 0;
-        let indexhBefore = indexh || 0,
-            indexvBefore = indexv || 0;
-        // Activate and transition to the new slide
-        indexh = updateSlides(HORIZONTAL_SLIDES_SELECTOR, h === undefined ? indexh : h);
-        indexv = updateSlides(VERTICAL_SLIDES_SELECTOR, v === undefined ? indexv : v);
-        // Dispatch an event if the slide changed
-        let slideChanged = (indexh !== indexhBefore || indexv !== indexvBefore);
-        // Ensure that the previous slide is never the same as the current
-        if (!slideChanged) previousSlide = null;
-        // Find the current horizontal slide and any possible vertical slides
-        // within it
-        let currentHorizontalSlide = horizontalSlides[indexh],
-            currentVerticalSlides = currentHorizontalSlide.querySelectorAll('section');
-        // Store references to the previous and current slides
-        currentSlide = currentVerticalSlides[indexv] || currentHorizontalSlide;
-        let autoAnimateTransition = false;
-        // Detect if we're moving between two auto-animated slides
-        if (slideChanged && previousSlide && currentSlide && !overview.isActive()) {
-            // If this is an auto-animated transition, we disable the
-            // regular slide transition
-            //
-            // Note 20-03-2020:
-            // This needs to happen before we update slide visibility,
-            // otherwise transitions will still run in Safari.
-            if (previousSlide.hasAttribute('data-auto-animate') && currentSlide.hasAttribute('data-auto-animate')) {
-                autoAnimateTransition = true;
-                dom.slides.classList.add('disable-slide-transitions');
+    slide(h, v, f, o) {
+            // Remember where we were at before
+            this.previousSlide = this.currentSlide;
+            // Query all horizontal slides in the deck
+            const horizontalSlides = this.dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR);
+            // Abort if there are no slides
+            if (horizontalSlides.length === 0) return;
+            // If no vertical index is specified and the upcoming slide is a
+            // stack, resume at its previous vertical index
+            if (v === undefined && !this.overview.isActive()) {
+                v = this.getPreviousVerticalIndex(horizontalSlides[h]);
             }
-            transition = 'running';
-        }
-        // Update the visibility of slides now that the indices have changed
-        updateSlidesVisibility();
-        layout();
-        // Update the overview if it's currently active
-        if (overview.isActive()) {
-            overview.update();
-        }
-        // Show fragment, if specified
-        if (typeof f !== 'undefined') {
-            fragments.goto(f);
-        }
-        // Solves an edge case where the previous slide maintains the
-        // 'present' class when navigating between adjacent vertical
-        // stacks
-        if (previousSlide && previousSlide !== currentSlide) {
-            previousSlide.classList.remove('present');
-            previousSlide.setAttribute('aria-hidden', 'true');
-            // Reset all slides upon navigate to home
-            if (isFirstSlide()) {
-                // Launch async task
-                setTimeout(() => {
-                    getVerticalStacks().forEach(slide => {
-                        setPreviousVerticalIndex(slide, 0);
-                    });
-                }, 0);
+            // If we were on a vertical stack, remember what vertical index
+            // it was on so we can resume at the same position when returning
+            if (this.previousSlide && this.previousSlide.parentNode && this.previousSlide.parentNode.classList.contains('stack')) {
+                this.setPreviousVerticalIndex(this.previousSlide.parentNode, this.indexv);
             }
-        }
-        // Apply the new state
-        stateLoop: for (let i = 0, len = state.length; i < len; i++) {
-                // Check if this state existed on the previous slide. If it
-                // did, we will avoid adding it repeatedly
-                for (let j = 0; j < stateBefore.length; j++) {
-                    if (stateBefore[j] === state[i]) {
-                        stateBefore.splice(j, 1);
-                        continue stateLoop;
+            // Remember the state before this slide
+            const stateBefore = this.state.concat();
+            // Reset the state array
+            this.state.length = 0;
+            let indexhBefore = this.indexh || 0,
+                indexvBefore = this.indexv || 0;
+            // Activate and transition to the new slide
+            this.indexh = this.updateSlides(HORIZONTAL_SLIDES_SELECTOR, h === undefined ? this.indexh : h);
+            this.indexv = this.updateSlides(VERTICAL_SLIDES_SELECTOR, v === undefined ? this.indexv : v);
+            // Dispatch an event if the slide changed
+            let slideChanged = (this.indexh !== indexhBefore || this.indexv !== indexvBefore);
+            // Ensure that the previous slide is never the same as the current
+            if (!slideChanged) this.previousSlide = null;
+            // Find the current horizontal slide and any possible vertical slides
+            // within it
+            let currentHorizontalSlide = horizontalSlides[this.indexh],
+                currentVerticalSlides = currentHorizontalSlide.querySelectorAll('section');
+            // Store references to the previous and current slides
+            this.currentSlide = currentVerticalSlides[this.indexv] || currentHorizontalSlide;
+            let autoAnimateTransition = false;
+            // Detect if we're moving between two auto-animated slides
+            if (slideChanged && this.previousSlide && this.currentSlide && !this.overview.isActive()) {
+                // If this is an auto-animated transition, we disable the
+                // regular slide transition
+                //
+                // Note 20-03-2020:
+                // This needs to happen before we update slide visibility,
+                // otherwise transitions will still run in Safari.
+                if (this.previousSlide.hasAttribute('data-auto-animate') && this.currentSlide.hasAttribute('data-auto-animate')) {
+                    autoAnimateTransition = true;
+                    this.dom.slides.classList.add('disable-slide-transitions');
+                }
+                this.transition = 'running';
+            }
+            // Update the visibility of slides now that the indices have changed
+            this.updateSlidesVisibility();
+            this.layout();
+            // Update the overview if it's currently active
+            if (this.overview.isActive()) {
+                this.overview.update();
+            }
+            // Show fragment, if specified
+            if (typeof f !== 'undefined') {
+                this.fragments.goto(f);
+            }
+            // Solves an edge case where the previous slide maintains the
+            // 'present' class when navigating between adjacent vertical
+            // stacks
+            if (this.previousSlide && this.previousSlide !== this.currentSlide) {
+                this.previousSlide.classList.remove('present');
+                this.previousSlide.setAttribute('aria-hidden', 'true');
+                // Reset all slides upon navigate to home
+                if (this.isFirstSlide()) {
+                    // Launch async task
+                    const setPreviousVerticalIndex = this.setPreviousVerticalIndex;
+                    setTimeout(() => {
+                        this.getVerticalStacks().forEach(slide => {
+                            setPreviousVerticalIndex(slide, 0);
+                        });
+                    }, 0);
+                }
+            }
+            const dom = this.dom;
+            // Apply the new state
+            stateLoop: for (let i = 0, len = this.state.length; i < len; i++) {
+                    // Check if this state existed on the previous slide. If it
+                    // did, we will avoid adding it repeatedly
+                    for (let j = 0; j < stateBefore.length; j++) {
+                        if (stateBefore[j] === this.state[i]) {
+                            stateBefore.splice(j, 1);
+                            continue stateLoop;
+                        }
                     }
+                    this.dom.viewport.classList.add(this.state[i]);
+                    // Dispatch custom event matching the state's name
+                    const target = this.dom.wrapper;
+                    this.dispatchEvent({
+                        target: target,
+                        type: this.state[i]
+                    });
+                    this.dispatchPostMessage(this.state[i])
                 }
-                dom.viewport.classList.add(state[i]);
-                // Dispatch custom event matching the state's name
-                dispatchEvent({ type: state[i] });
+                // Clean up the remains of the previous state
+            while (stateBefore.length) {
+                dom.viewport.classList.remove(stateBefore.pop());
             }
-            // Clean up the remains of the previous state
-        while (stateBefore.length) {
-            dom.viewport.classList.remove(stateBefore.pop());
-        }
-        if (slideChanged) {
-            dispatchEvent({
-                type: 'slidechanged',
-                data: {
-                    indexh,
-                    indexv,
-                    previousSlide,
-                    currentSlide,
-                    origin: o
+            if (slideChanged) {
+                const indexh = this.indexh;
+                const indexv = this.indexv;
+                const previousSlide = this.previousSlide;
+                const currentSlide = this.currentSlide;
+                const target = this.dom.wrapper;
+                this.dispatchEvent({
+                    target: target,
+                    type: 'slidechanged',
+                    data: {
+                        indexh,
+                        indexv,
+                        previousSlide,
+                        currentSlide,
+                        origin: o
+                    }
+                });
+                this.dispatchPostMessage('slidechanged')
+            }
+            // Handle embedded content
+            if (slideChanged || !this.previousSlide) {
+                this.slideContent.stopEmbeddedContent(this.previousSlide);
+                this.slideContent.startEmbeddedContent(this.currentSlide);
+            }
+            // Announce the current slide contents to screen readers
+            this.announceStatus(this.getStatusText(this.currentSlide));
+            this.progress.update();
+            this.controls.update();
+            this.notes.update();
+            this.backgrounds.update();
+            this.backgrounds.updateParallax();
+            this.slideNumber.update();
+            this.fragments.update();
+            // Update the URL hash
+            this.location.writeURL();
+            this.cueAutoSlide();
+            // Auto-animation
+            if (autoAnimateTransition) {
+                setTimeout(() => {
+                    dom.slides.classList.remove('disable-slide-transitions');
+                }, 0);
+                if (this.config.autoAnimate) {
+                    // Run the auto-animation between our slides
+                    this.autoAnimate.run(this.previousSlide, this.currentSlide);
                 }
-            });
-        }
-        // Handle embedded content
-        if (slideChanged || !previousSlide) {
-            slideContent.stopEmbeddedContent(previousSlide);
-            slideContent.startEmbeddedContent(currentSlide);
-        }
-        // Announce the current slide contents to screen readers
-        announceStatus(getStatusText(currentSlide));
-        progress.update();
-        controls.update();
-        notes.update();
-        backgrounds.update();
-        backgrounds.updateParallax();
-        slideNumber.update();
-        fragments.update();
-        // Update the URL hash
-        location.writeURL();
-        cueAutoSlide();
-        // Auto-animation
-        if (autoAnimateTransition) {
-            setTimeout(() => {
-                dom.slides.classList.remove('disable-slide-transitions');
-            }, 0);
-            if (config.autoAnimate) {
-                // Run the auto-animation between our slides
-                autoAnimate.run(previousSlide, currentSlide);
             }
         }
-    }
-    /**
-     * Syncs the presentation with the current DOM. Useful
-     * when new slides or control elements are added or when
-     * the configuration has changed.
-     */
-    function sync() {
+        /**
+         * Syncs the presentation with the current DOM. Useful
+         * when new slides or control elements are added or when
+         * the configuration has changed.
+         */
+    sync() {
         // Subscribe to input
-        removeEventListeners();
-        addEventListeners();
+        this.removeEventListeners();
+        this.addEventListeners();
         // Force a layout to make sure the current config is accounted for
-        layout();
+        this.layout();
         // Reflect the current autoSlide value
-        autoSlide = config.autoSlide;
+        this.autoSlide = this.config.autoSlide;
         // Start auto-sliding if it's enabled
-        cueAutoSlide();
+        this.cueAutoSlide();
         // Re-create all slide backgrounds
-        backgrounds.create();
+        this.backgrounds.create();
         // Write the current hash to the URL
-        location.writeURL();
-        fragments.sortAll();
-        controls.update();
-        progress.update();
-        updateSlidesVisibility();
-        notes.update();
-        notes.updateVisibility();
-        backgrounds.update(true);
-        slideNumber.update();
-        slideContent.formatEmbeddedContent();
+        this.location.writeURL();
+        this.fragments.sortAll();
+        this.controls.update();
+        this.progress.update();
+        this.updateSlidesVisibility();
+        this.notes.update();
+        this.notes.updateVisibility();
+        this.backgrounds.update(true);
+        this.slideNumber.update();
+        this.slideContent.formatEmbeddedContent();
         // Start or stop embedded content depending on global config
-        if (config.autoPlayMedia === false) {
-            slideContent.stopEmbeddedContent(currentSlide, { unloadIframes: false });
+        if (this.config.autoPlayMedia === false) {
+            this.slideContent.stopEmbeddedContent(this.currentSlide, { unloadIframes: false });
         } else {
-            slideContent.startEmbeddedContent(currentSlide);
+            this.slideContent.startEmbeddedContent(this.currentSlide);
         }
-        if (overview.isActive()) {
-            overview.layout();
+        if (this.overview.isActive()) {
+            this.overview.layout();
         }
     }
 
@@ -5737,20 +5875,20 @@ const Deck = function(revealElement, options) {
      *
      * @param {HTMLElement} slide
      */
-    function syncSlide(slide = currentSlide) {
-        backgrounds.sync(slide);
-        fragments.sync(slide);
-        slideContent.load(slide);
-        backgrounds.update();
-        notes.update();
+    syncSlide(slide = this.currentSlide) {
+        this.backgrounds.sync(slide);
+        this.fragments.sync(slide);
+        this.slideContent.load(slide);
+        this.backgrounds.update();
+        this.notes.update();
     }
 
     /**
      * Resets all vertical slides so that only the first
      * is visible.
      */
-    function resetVerticalSlides() {
-        getHorizontalSlides().forEach(horizontalSlide => {
+    resetVerticalSlides() {
+        this.getHorizontalSlides().forEach(horizontalSlide => {
             queryAll(horizontalSlide, 'section').forEach((verticalSlide, y) => {
                 if (y > 0) {
                     verticalSlide.classList.remove('present');
@@ -5765,7 +5903,8 @@ const Deck = function(revealElement, options) {
     /**
      * Randomly shuffles all slides in the deck.
      */
-    function shuffle(slides = getHorizontalSlides()) {
+    shuffle(slides = this.getHorizontalSlides()) {
+        const shuffle = this.shuffle;
         slides.forEach((slide, i) => {
             // Insert the slide next to a randomly picked sibling slide
             // slide. This may cause the slide to insert before itself,
@@ -5795,16 +5934,16 @@ const Deck = function(revealElement, options) {
      * might differ from the passed in index if it was out of
      * bounds.
      */
-    function updateSlides(selector, index) {
+    updateSlides(selector, index) {
         // Select all slides and convert the NodeList result to
         // an array
-        let slides = queryAll(dom.wrapper, selector),
+        let slides = queryAll(this.dom.wrapper, selector),
             slidesLength = slides.length;
 
-        let printMode = print.isPrintingPDF();
+        let printMode = this.print.isPrintingPDF();
         if (slidesLength) {
             // Should the index loop?
-            if (config.loop) {
+            if (this.config.loop) {
                 index %= slidesLength;
                 if (index < 0) {
                     index = slidesLength + index;
@@ -5813,7 +5952,8 @@ const Deck = function(revealElement, options) {
 
             // Enforce max and minimum index bounds
             index = Math.max(Math.min(index, slidesLength - 1), 0);
-
+            const isVerticalSlide = this.isVerticalSlide;
+            const config = this.config;
             for (let i = 0; i < slidesLength; i++) {
                 let element = slides[i];
                 let reverse = config.rtl && !isVerticalSlide(element);
@@ -5863,17 +6003,17 @@ const Deck = function(revealElement, options) {
             slide.removeAttribute('aria-hidden');
             if (!wasPresent) {
                 // Dispatch an event indicating the slide is now visible
-                dispatchEvent({
+                this.dispatchEvent({
                     target: slide,
                     type: 'visible',
-                    bubbles: false
+                    bubbles: false,
                 });
             }
             // If this slide has a state associated with it, add it
             // onto the current state of the deck
             let slideState = slide.getAttribute('data-state');
             if (slideState) {
-                state = state.concat(slideState.split(' '));
+                this.state = this.state.concat(slideState.split(' '));
             }
         } else {
             // Since there are no slides we can't be anywhere beyond the
@@ -5887,87 +6027,90 @@ const Deck = function(revealElement, options) {
      * Optimization method; hide all slides that are far away
      * from the present slide.
      */
-    function updateSlidesVisibility() {
-        // Select all slides and convert the NodeList result to
-        // an array
-        let horizontalSlides = getHorizontalSlides(),
-            horizontalSlidesLength = horizontalSlides.length,
-            distanceX,
-            distanceY;
-        if (horizontalSlidesLength && typeof indexh !== 'undefined') {
-            // The number of steps away from the present slide that will
-            // be visible
-            let viewDistance = overview.isActive() ? 10 : config.viewDistance;
-            // Shorten the view distance on devices that typically have
-            // less resources
-            if (isMobile) {
-                viewDistance = overview.isActive() ? 6 : config.mobileViewDistance;
-            }
-            // All slides need to be visible when exporting to PDF
-            if (print.isPrintingPDF()) {
-                viewDistance = Number.MAX_VALUE;
-            }
-            for (let x = 0; x < horizontalSlidesLength; x++) {
-                let horizontalSlide = horizontalSlides[x];
-                let verticalSlides = queryAll(horizontalSlide, 'section'),
-                    verticalSlidesLength = verticalSlides.length;
-                // Determine how far away this slide is from the present
-                distanceX = Math.abs((indexh || 0) - x) || 0;
-                // If the presentation is looped, distance should measure
-                // 1 between the first and last slides
-                if (config.loop) {
-                    distanceX = Math.abs(((indexh || 0) - x) % (horizontalSlidesLength - viewDistance)) || 0;
+    updateSlidesVisibility() {
+            // Select all slides and convert the NodeList result to
+            // an array
+            let horizontalSlides = this.getHorizontalSlides(),
+                horizontalSlidesLength = horizontalSlides.length,
+                distanceX,
+                distanceY;
+            if (horizontalSlidesLength && typeof indexh !== 'undefined') {
+                // The number of steps away from the present slide that will
+                // be visible
+                let viewDistance = this.overview.isActive() ? 10 : this.config.viewDistance;
+                // Shorten the view distance on devices that typically have
+                // less resources
+                if (isMobile) {
+                    viewDistance = this.overview.isActive() ? 6 : this.config.mobileViewDistance;
                 }
-                // Show the horizontal slide if it's within the view distance
-                if (distanceX < viewDistance) {
-                    slideContent.load(horizontalSlide);
-                } else {
-                    slideContent.unload(horizontalSlide);
+                // All slides need to be visible when exporting to PDF
+                if (this.print.isPrintingPDF()) {
+                    viewDistance = Number.MAX_VALUE;
                 }
-                if (verticalSlidesLength) {
-                    let oy = getPreviousVerticalIndex(horizontalSlide);
-                    for (let y = 0; y < verticalSlidesLength; y++) {
-                        let verticalSlide = verticalSlides[y];
-                        distanceY = x === (indexh || 0) ? Math.abs((indexv || 0) - y) : Math.abs(y - oy);
-                        if (distanceX + distanceY < viewDistance) {
-                            slideContent.load(verticalSlide);
-                        } else {
-                            slideContent.unload(verticalSlide);
+
+                const getPreviousVerticalIndex = this.getPreviousVerticalIndex;
+                const slideContent = this.slideContent;
+                for (let x = 0; x < horizontalSlidesLength; x++) {
+                    let horizontalSlide = horizontalSlides[x];
+                    let verticalSlides = queryAll(horizontalSlide, 'section'),
+                        verticalSlidesLength = verticalSlides.length;
+                    // Determine how far away this slide is from the present
+                    distanceX = Math.abs((indexh || 0) - x) || 0;
+                    // If the presentation is looped, distance should measure
+                    // 1 between the first and last slides
+                    if (config.loop) {
+                        distanceX = Math.abs(((indexh || 0) - x) % (horizontalSlidesLength - viewDistance)) || 0;
+                    }
+                    // Show the horizontal slide if it's within the view distance
+                    if (distanceX < viewDistance) {
+                        this.slideContent.load(horizontalSlide);
+                    } else {
+                        this.slideContent.unload(horizontalSlide);
+                    }
+                    if (verticalSlidesLength) {
+                        let oy = getPreviousVerticalIndex(horizontalSlide);
+                        for (let y = 0; y < verticalSlidesLength; y++) {
+                            let verticalSlide = verticalSlides[y];
+                            distanceY = x === (indexh || 0) ? Math.abs((indexv || 0) - y) : Math.abs(y - oy);
+                            if (distanceX + distanceY < viewDistance) {
+                                slideContent.load(verticalSlide);
+                            } else {
+                                slideContent.unload(verticalSlide);
+                            }
                         }
                     }
                 }
-            }
-            // Flag if there are ANY vertical slides, anywhere in the deck
-            if (hasVerticalSlides()) {
-                dom.wrapper.classList.add('has-vertical-slides');
-            } else {
-                dom.wrapper.classList.remove('has-vertical-slides');
-            }
-            // Flag if there are ANY horizontal slides, anywhere in the deck
-            if (hasHorizontalSlides()) {
-                dom.wrapper.classList.add('has-horizontal-slides');
-            } else {
-                dom.wrapper.classList.remove('has-horizontal-slides');
+                // Flag if there are ANY vertical slides, anywhere in the deck
+                if (this.hasVerticalSlides()) {
+                    this.dom.wrapper.classList.add('has-vertical-slides');
+                } else {
+                    this.dom.wrapper.classList.remove('has-vertical-slides');
+                }
+                // Flag if there are ANY horizontal slides, anywhere in the deck
+                if (this.hasHorizontalSlides()) {
+                    this.dom.wrapper.classList.add('has-horizontal-slides');
+                } else {
+                    this.dom.wrapper.classList.remove('has-horizontal-slides');
+                }
             }
         }
-    }
-    /**
-     * Determine what available routes there are for navigation.
-     *
-     * @return {{left: boolean, right: boolean, up: boolean, down: boolean}}
-     */
-    function availableRoutes({ includeFragments = false } = {}) {
-        let horizontalSlides = dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR),
-            verticalSlides = dom.wrapper.querySelectorAll(VERTICAL_SLIDES_SELECTOR);
+        /**
+         * Determine what available routes there are for navigation.
+         *
+         * @return {{left: boolean, right: boolean, up: boolean, down: boolean}}
+         */
+    availableRoutes({ includeFragments = false } = {}) {
+        let horizontalSlides = this.dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR),
+            verticalSlides = this.dom.wrapper.querySelectorAll(VERTICAL_SLIDES_SELECTOR);
         let routes = {
-            left: indexh > 0,
-            right: indexh < horizontalSlides.length - 1,
-            up: indexv > 0,
-            down: indexv < verticalSlides.length - 1
+            left: this.indexh > 0,
+            right: this.indexh < horizontalSlides.length - 1,
+            up: this.indexv > 0,
+            down: this.indexv < verticalSlides.length - 1
         };
         // Looped presentations can always be navigated as long as
         // there are slides available
-        if (config.loop) {
+        if (this.config.loop) {
             if (horizontalSlides.length > 1) {
                 routes.left = true;
                 routes.right = true;
@@ -5978,7 +6121,7 @@ const Deck = function(revealElement, options) {
                 routes.down = true;
             }
         }
-        if (horizontalSlides.length > 1 && config.navigationMode === 'linear') {
+        if (horizontalSlides.length > 1 && this.config.navigationMode === 'linear') {
             routes.right = routes.right || routes.down;
             routes.left = routes.left || routes.up;
         }
@@ -5986,14 +6129,14 @@ const Deck = function(revealElement, options) {
         // availalbe if either a slid OR fragment is available in
         // the given direction
         if (includeFragments === true) {
-            let fragmentRoutes = fragments.availableRoutes();
+            let fragmentRoutes = this.fragments.availableRoutes();
             routes.left = routes.left || fragmentRoutes.prev;
             routes.up = routes.up || fragmentRoutes.prev;
             routes.down = routes.down || fragmentRoutes.next;
             routes.right = routes.right || fragmentRoutes.next;
         }
         // Reverse horizontal controls for rtl
-        if (config.rtl) {
+        if (this.config.rtl) {
             let left = routes.left;
             routes.left = routes.right;
             routes.right = left;
@@ -6009,8 +6152,8 @@ const Deck = function(revealElement, options) {
      *
      * @return {number} Past slide count
      */
-    function getSlidePastCount(slide = currentSlide) {
-        let horizontalSlides = getHorizontalSlides();
+    getSlidePastCount(slide = this.currentSlide) {
+        let horizontalSlides = this.getHorizontalSlides();
         // The number of past slides
         let pastCount = 0;
         // Step through all slides and count the past ones
@@ -6046,16 +6189,16 @@ const Deck = function(revealElement, options) {
      *
      * @return {number}
      */
-    function getProgress() {
+    getProgress() {
         // The number of past and total slides
-        let totalCount = getTotalSlides();
-        let pastCount = getSlidePastCount();
-        if (currentSlide) {
-            let allFragments = currentSlide.querySelectorAll('.fragment');
+        let totalCount = this.getTotalSlides();
+        let pastCount = this.getSlidePastCount();
+        if (this.currentSlide) {
+            let allFragments = this.currentSlide.querySelectorAll('.fragment');
             // If there are fragments in the current slide those should be
             // accounted for in the progress.
             if (allFragments.length > 0) {
-                let visibleFragments = currentSlide.querySelectorAll('.fragment.visible');
+                let visibleFragments = this.currentSlide.querySelectorAll('.fragment.visible');
                 // This value represents how big a portion of the slide progress
                 // that is made up by its fragments (0-1)
                 let fragmentWeight = 0.9;
@@ -6077,18 +6220,18 @@ const Deck = function(revealElement, options) {
      *
      * @return {{h: number, v: number, f: number}}
      */
-    function getIndices(slide) {
+    getIndices(slide) {
         // By default, return the current indices
-        let h = indexh,
-            v = indexv,
+        let h = this.indexh,
+            v = this.indexv,
             f;
 
         // If a slide is specified, return the indices of that slide
         if (slide) {
-            let isVertical = isVerticalSlide(slide);
+            let isVertical = this.isVerticalSlide(slide);
             let slideh = isVertical ? slide.parentNode : slide;
             // Select all horizontal slides
-            let horizontalSlides = getHorizontalSlides();
+            let horizontalSlides = this.getHorizontalSlides();
             // Now that we know which the horizontal slide is, get its index
             h = Math.max(horizontalSlides.indexOf(slideh), 0);
             // Assume we're not vertical
@@ -6098,14 +6241,14 @@ const Deck = function(revealElement, options) {
                 v = Math.max(queryAll(slide.parentNode, 'section').indexOf(slide), 0);
             }
         }
-        if (!slide && currentSlide) {
-            let hasFragments = currentSlide.querySelectorAll('.fragment').length > 0;
+        if (!slide && this.currentSlide) {
+            let hasFragments = this.currentSlide.querySelectorAll('.fragment').length > 0;
             if (hasFragments) {
-                let currentFragment = currentSlide.querySelector('.current-fragment');
+                let currentFragment = this.currentSlide.querySelector('.current-fragment');
                 if (currentFragment && currentFragment.hasAttribute('data-fragment-index')) {
                     f = parseInt(currentFragment.getAttribute('data-fragment-index'), 10);
                 } else {
-                    f = currentSlide.querySelectorAll('.fragment.visible').length - 1;
+                    f = this.currentSlide.querySelectorAll('.fragment.visible').length - 1;
                 }
             }
         }
@@ -6115,8 +6258,8 @@ const Deck = function(revealElement, options) {
     /**
      * Retrieves all slides in this presentation.
      */
-    function getSlides() {
-        return queryAll(dom.wrapper, SLIDES_SELECTOR + ':not(.stack):not([data-visibility="uncounted"])');
+    getSlides() {
+        return queryAll(this.dom.wrapper, SLIDES_SELECTOR + ':not(.stack):not([data-visibility="uncounted"])');
     }
 
     /**
@@ -6124,44 +6267,44 @@ const Deck = function(revealElement, options) {
      * vertical stack is included as one horizontal slide in the
      * resulting array.
      */
-    function getHorizontalSlides() {
-        return queryAll(dom.wrapper, HORIZONTAL_SLIDES_SELECTOR);
+    getHorizontalSlides() {
+        return queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR);
     }
 
     /**
      * Returns all vertical slides that exist within this deck.
      */
-    function getVerticalSlides() {
-        return queryAll(dom.wrapper, '.slides>section>section');
+    getVerticalSlides() {
+        return queryAll(this.dom.wrapper, '.slides>section>section');
     }
 
     /**
      * Returns all vertical stacks (each stack can contain multiple slides).
      */
-    function getVerticalStacks() {
-        return queryAll(dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.stack');
+    getVerticalStacks() {
+        return queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.stack');
     }
 
     /**
      * Returns true if there are at least two horizontal slides.
      */
-    function hasHorizontalSlides() {
-        return getHorizontalSlides().length > 1;
+    hasHorizontalSlides() {
+        return this.getHorizontalSlides().length > 1;
     }
 
     /**
      * Returns true if there are at least two vertical slides.
      */
-    function hasVerticalSlides() {
-        return getVerticalSlides().length > 1;
+    hasVerticalSlides() {
+        return this.getVerticalSlides().length > 1;
     }
 
     /**
      * Returns an array of objects where each object represents the
      * attributes on its respective slide.
      */
-    function getSlidesAttributes() {
-        return getSlides().map(slide => {
+    getSlidesAttributes() {
+        return this.getSlides().map(slide => {
             let attributes = {};
             for (let i = 0; i < slide.attributes.length; i++) {
                 let attribute = slide.attributes[i];
@@ -6176,8 +6319,8 @@ const Deck = function(revealElement, options) {
      *
      * @return {number}
      */
-    function getTotalSlides() {
-        return getSlides().length;
+    getTotalSlides() {
+        return this.getSlides().length;
     }
 
     /**
@@ -6185,8 +6328,8 @@ const Deck = function(revealElement, options) {
      *
      * @return {HTMLElement}
      */
-    function getSlide(x, y) {
-        let horizontalSlide = getHorizontalSlides()[x];
+    getSlide(x, y) {
+        let horizontalSlide = this.getHorizontalSlides()[x];
         let verticalSlides = horizontalSlide && horizontalSlide.querySelectorAll('section');
         if (verticalSlides && verticalSlides.length && typeof y === 'number') {
             return verticalSlides ? verticalSlides[y] : undefined;
@@ -6205,8 +6348,8 @@ const Deck = function(revealElement, options) {
      * @param {number} y Vertical background index
      * @return {(HTMLElement[]|*)}
      */
-    function getSlideBackground(x, y) {
-        let slide = typeof x === 'number' ? getSlide(x, y) : x;
+    getSlideBackground(x, y) {
+        let slide = typeof x === 'number' ? this.getSlide(x, y) : x;
         if (slide) {
             return slide.slideBackgroundElement;
         }
@@ -6220,14 +6363,14 @@ const Deck = function(revealElement, options) {
      *
      * @return {{indexh: number, indexv: number, indexf: number, paused: boolean, overview: boolean}}
      */
-    function getState() {
-        let indices = getIndices();
+    getState() {
+        let indices = this.getIndices();
         return {
             indexh: indices.h,
             indexv: indices.v,
             indexf: indices.f,
-            paused: isPaused(),
-            overview: overview.isActive()
+            paused: this.isPaused(),
+            overview: this.overview.isActive()
         };
 
     }
@@ -6238,16 +6381,16 @@ const Deck = function(revealElement, options) {
      * @param {object} state As generated by getState()
      * @see {@link getState} generates the parameter `state`
      */
-    function setState(state) {
+    setState(state) {
         if (typeof state === 'object') {
-            slide(deserialize(state.indexh), deserialize(state.indexv), deserialize(state.indexf));
+            this.slide(deserialize(state.indexh), deserialize(state.indexv), deserialize(state.indexf));
             let pausedFlag = deserialize(state.paused),
                 overviewFlag = deserialize(state.overview);
             if (typeof pausedFlag === 'boolean' && pausedFlag !== isPaused()) {
-                togglePause(pausedFlag);
+                this.togglePause(pausedFlag);
             }
             if (typeof overviewFlag === 'boolean' && overviewFlag !== overview.isActive()) {
-                overview.toggle(overviewFlag);
+                this.overview.toggle(overviewFlag);
             }
         }
     }
@@ -6255,37 +6398,37 @@ const Deck = function(revealElement, options) {
     /**
      * Cues a new automated slide if enabled in the config.
      */
-    function cueAutoSlide() {
-        cancelAutoSlide();
-        if (currentSlide && config.autoSlide !== false) {
-            let fragment = currentSlide.querySelector('.current-fragment');
+    cueAutoSlide() {
+        this.cancelAutoSlide();
+        if (this.currentSlide && this.config.autoSlide !== false) {
+            let fragment = this.currentSlide.querySelector('.current-fragment');
             // When the slide first appears there is no "current" fragment so
             // we look for a data-autoslide timing on the first fragment
-            if (!fragment) fragment = currentSlide.querySelector('.fragment');
+            if (!fragment) fragment = this.currentSlide.querySelector('.fragment');
             let fragmentAutoSlide = fragment ? fragment.getAttribute('data-autoslide') : null;
-            let parentAutoSlide = currentSlide.parentNode ? currentSlide.parentNode.getAttribute('data-autoslide') : null;
-            let slideAutoSlide = currentSlide.getAttribute('data-autoslide');
+            let parentAutoSlide = this.currentSlide.parentNode ? this.currentSlide.parentNode.getAttribute('data-autoslide') : null;
+            let slideAutoSlide = this.currentSlide.getAttribute('data-autoslide');
             // Pick value in the following priority order:
             // 1. Current fragment's data-autoslide
             // 2. Current slide's data-autoslide
             // 3. Parent slide's data-autoslide
             // 4. Global autoSlide setting
             if (fragmentAutoSlide) {
-                autoSlide = parseInt(fragmentAutoSlide, 10);
+                this.autoSlide = parseInt(fragmentAutoSlide, 10);
             } else if (slideAutoSlide) {
-                autoSlide = parseInt(slideAutoSlide, 10);
+                this.autoSlide = parseInt(slideAutoSlide, 10);
             } else if (parentAutoSlide) {
-                autoSlide = parseInt(parentAutoSlide, 10);
+                this.autoSlide = parseInt(parentAutoSlide, 10);
             } else {
-                autoSlide = config.autoSlide;
+                this.autoSlide = this.config.autoSlide;
 
                 // If there are media elements with data-autoplay,
                 // automatically set the autoSlide duration to the
                 // length of that media. Not applicable if the slide
                 // is divided up into fragments.
                 // playbackRate is accounted for in the duration.
-                if (currentSlide.querySelectorAll('.fragment').length === 0) {
-                    queryAll(currentSlide, 'video, audio').forEach(el => {
+                if (this.currentSlide.querySelectorAll('.fragment').length === 0) {
+                    queryAll(this.currentSlide, 'video, audio').forEach(el => {
                         if (el.hasAttribute('data-autoplay')) {
                             if (autoSlide && (el.duration * 1000 / el.playbackRate) > autoSlide) {
                                 autoSlide = (el.duration * 1000 / el.playbackRate) + 1000;
@@ -6300,8 +6443,11 @@ const Deck = function(revealElement, options) {
             // - The presentation isn't paused
             // - The overview isn't active
             // - The presentation isn't over
-            if (autoSlide && !autoSlidePaused && !isPaused() && !overview.isActive() && (!isLastSlide() || fragments.availableRoutes().next || config.loop === true)) {
-                autoSlideTimeout = setTimeout(() => {
+            if (this.autoSlide && !this.autoSlidePaused && !this.isPaused() && !this.overview.isActive() && (!this.isLastSlide() || this.fragments.availableRoutes().next || this.config.loop === true)) {
+                const config = this.config;
+                const navigateNext = this.navigateNext;
+                const cueAutoSlide = this.cueAutoSlide;
+                this.autoSlideTimeout = setTimeout(() => {
                     if (typeof config.autoSlideMethod === 'function') {
                         config.autoSlideMethod()
                     } else {
@@ -6309,10 +6455,10 @@ const Deck = function(revealElement, options) {
                     }
                     cueAutoSlide();
                 }, autoSlide);
-                autoSlideStartTime = Date.now();
+                this.autoSlideStartTime = Date.now();
             }
-            if (autoSlidePlayer) {
-                autoSlidePlayer.setPlaying(autoSlideTimeout !== -1);
+            if (this.autoSlidePlayer) {
+                this.autoSlidePlayer.setPlaying(this.autoSlideTimeout !== -1);
             }
         }
     }
@@ -6320,70 +6466,80 @@ const Deck = function(revealElement, options) {
     /**
      * Cancels any ongoing request to auto-slide.
      */
-    function cancelAutoSlide() {
-        clearTimeout(autoSlideTimeout);
-        autoSlideTimeout = -1;
+    cancelAutoSlide() {
+        clearTimeout(this.autoSlideTimeout);
+        this.autoSlideTimeout = -1;
     }
 
-    function pauseAutoSlide() {
-        if (autoSlide && !autoSlidePaused) {
-            autoSlidePaused = true;
-            dispatchEvent({ type: 'autoslidepaused' });
-            clearTimeout(autoSlideTimeout);
-            if (autoSlidePlayer) {
-                autoSlidePlayer.setPlaying(false);
+    pauseAutoSlide() {
+        if (this.autoSlide && !this.autoSlidePaused) {
+            this.autoSlidePaused = true;
+            const target = this.dom.wrapper;
+            this.dispatchEvent({
+                target: target,
+                type: 'autoslidepaused'
+            });
+            this.dispatchPostMessage('autoslidepaused')
+            clearTimeout(this.autoSlideTimeout);
+            if (this.autoSlidePlayer) {
+                this.autoSlidePlayer.setPlaying(false);
             }
         }
     }
 
-    function resumeAutoSlide() {
-        if (autoSlide && autoSlidePaused) {
-            autoSlidePaused = false;
-            dispatchEvent({ type: 'autoslideresumed' });
-            cueAutoSlide();
+    resumeAutoSlide() {
+        if (this.autoSlide && this.autoSlidePaused) {
+            this.autoSlidePaused = false;
+            const target = this.dom.wrapper;
+            this.dispatchEvent({
+                target: target,
+                type: 'autoslideresumed'
+            });
+            this.dispatchPostMessage('autoslideresumed')
+            this.cueAutoSlide();
         }
     }
 
-    function navigateLeft() {
-        navigationHistory.hasNavigatedHorizontally = true;
+    navigateLeft() {
+        this.navigationHistory.hasNavigatedHorizontally = true;
         // Reverse for RTL
-        if (config.rtl) {
-            if ((overview.isActive() || fragments.next() === false) && availableRoutes().left) {
-                slide(indexh + 1, config.navigationMode === 'grid' ? indexv : undefined);
+        if (this.config.rtl) {
+            if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().left) {
+                this.slide(this.indexh + 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
             }
         }
         // Normal navigation
-        else if ((overview.isActive() || fragments.prev() === false) && availableRoutes().left) {
-            slide(indexh - 1, config.navigationMode === 'grid' ? indexv : undefined);
+        else if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().left) {
+            this.slide(this.indexh - 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
         }
     }
 
-    function navigateRight() {
-        navigationHistory.hasNavigatedHorizontally = true;
+    navigateRight() {
+        this.navigationHistory.hasNavigatedHorizontally = true;
         // Reverse for RTL
-        if (config.rtl) {
-            if ((overview.isActive() || fragments.prev() === false) && availableRoutes().right) {
-                slide(indexh - 1, config.navigationMode === 'grid' ? indexv : undefined);
+        if (this.config.rtl) {
+            if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().right) {
+                this.slide(this.indexh - 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
             }
         }
         // Normal navigation
-        else if ((overview.isActive() || fragments.next() === false) && availableRoutes().right) {
-            slide(indexh + 1, config.navigationMode === 'grid' ? indexv : undefined);
+        else if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().right) {
+            this.slide(this.indexh + 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
         }
     }
 
-    function navigateUp() {
+    navigateUp() {
         // Prioritize hiding fragments
-        if ((overview.isActive() || fragments.prev() === false) && availableRoutes().up) {
-            slide(indexh, indexv - 1);
+        if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().up) {
+            this.slide(this.indexh, this.indexv - 1);
         }
     }
 
-    function navigateDown() {
-        navigationHistory.hasNavigatedVertically = true;
+    navigateDown() {
+        this.navigationHistory.hasNavigatedVertically = true;
         // Prioritize revealing fragments
-        if ((overview.isActive() || fragments.next() === false) && availableRoutes().down) {
-            slide(indexh, indexv + 1);
+        if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().down) {
+            this.slide(this.indexh, this.indexv + 1);
         }
     }
 
@@ -6393,23 +6549,23 @@ const Deck = function(revealElement, options) {
      * 2) Previous vertical slide
      * 3) Previous horizontal slide
      */
-    function navigatePrev() {
+    navigatePrev() {
         // Prioritize revealing fragments
-        if (fragments.prev() === false) {
-            if (availableRoutes().up) {
-                navigateUp();
+        if (this.fragments.prev() === false) {
+            if (this.availableRoutes().up) {
+                this.navigateUp();
             } else {
                 // Fetch the previous horizontal slide, if there is one
                 let previousSlide;
                 if (config.rtl) {
-                    previousSlide = queryAll(dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.future').pop();
+                    previousSlide = queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.future').pop();
                 } else {
-                    previousSlide = queryAll(dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.past').pop();
+                    previousSlide = queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.past').pop();
                 }
                 if (previousSlide) {
                     let v = (previousSlide.querySelectorAll('section').length - 1) || undefined;
-                    let h = indexh - 1;
-                    slide(h, v);
+                    let h = this.indexh - 1;
+                    this.slide(h, v);
                 }
             }
         }
@@ -6418,30 +6574,30 @@ const Deck = function(revealElement, options) {
     /**
      * The reverse of #navigatePrev().
      */
-    function navigateNext() {
-        navigationHistory.hasNavigatedHorizontally = true;
-        navigationHistory.hasNavigatedVertically = true;
-        // Prioritize revealing fragments
-        if (fragments.next() === false) {
-            let routes = availableRoutes();
-            // When looping is enabled `routes.down` is always available
-            // so we need a separate check for when we've reached the
-            // end of a stack and should move horizontally
-            if (routes.down && routes.right && config.loop && isLastVerticalSlide(currentSlide)) {
-                routes.down = false;
-            }
-            if (routes.down) {
-                navigateDown();
-            } else if (config.rtl) {
-                navigateLeft();
-            } else {
-                navigateRight();
+    navigateNext() {
+            this.navigationHistory.hasNavigatedHorizontally = true;
+            this.navigationHistory.hasNavigatedVertically = true;
+            // Prioritize revealing fragments
+            if (this.fragments.next() === false) {
+                let routes = this.availableRoutes();
+                // When looping is enabled `routes.down` is always available
+                // so we need a separate check for when we've reached the
+                // end of a stack and should move horizontally
+                if (routes.down && routes.right && config.loop && isLastVerticalSlide(currentSlide)) {
+                    routes.down = false;
+                }
+                if (routes.down) {
+                    this.navigateDown();
+                } else if (this.config.rtl) {
+                    this.navigateLeft();
+                } else {
+                    this.navigateRight();
+                }
             }
         }
-    }
-    // --------------------------------------------------------------------//
-    // ----------------------------- EVENTS -------------------------------//
-    // --------------------------------------------------------------------//
+        // --------------------------------------------------------------------//
+        // ----------------------------- EVENTS -------------------------------//
+        // --------------------------------------------------------------------//
 
     /**
      * Called by all event handlers that are based on user
@@ -6449,9 +6605,9 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} [event]
      */
-    function onUserInput(event) {
-        if (config.autoSlideStoppable) {
-            pauseAutoSlide();
+    onUserInput(event) {
+        if (this.config.autoSlideStoppable) {
+            this.pauseAutoSlide();
         }
     }
 
@@ -6460,13 +6616,20 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} [event]
      */
-    function onTransitionEnd(event) {
-        if (transition === 'running' && /section/gi.test(event.target.nodeName)) {
-            transition = 'idle';
-            dispatchEvent({
+    onTransitionEnd(event) {
+        if (this.transition === 'running' && /section/gi.test(event.target.nodeName)) {
+            this.transition = 'idle';
+            const indexh = this.indexh;
+            const indexv = this.indexv;
+            const previousSlide = this.previousSlide;
+            const currentSlide = this.currentSlide;
+            const target = this.dom.wrapper;
+            this.dispatchEvent({
+                target: target,
                 type: 'slidetransitionend',
                 data: { indexh, indexv, previousSlide, currentSlide }
             });
+            this.dispatchPostMessage('slidetransitionend')
         }
     }
 
@@ -6475,8 +6638,8 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} [event]
      */
-    function onWindowResize(event) {
-        layout();
+    onWindowResize(event) {
+        this.layout();
     }
 
     /**
@@ -6484,7 +6647,7 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} [event]
      */
-    function onPageVisibilityChange(event) {
+    onPageVisibilityChange(event) {
         // If, after clicking a link or similar and we're coming back,
         // focus the document.body to ensure we can use keyboard shortcuts
         if (document.hidden === false && document.activeElement !== document.body) {
@@ -6502,11 +6665,11 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} event
      */
-    function onPreviewLinkClicked(event) {
+    onPreviewLinkClicked(event) {
         if (event.currentTarget && event.currentTarget.hasAttribute('href')) {
             let url = event.currentTarget.getAttribute('href');
             if (url) {
-                showPreview(url);
+                this.showPreview(url);
                 event.preventDefault();
             }
         }
@@ -6517,212 +6680,50 @@ const Deck = function(revealElement, options) {
      *
      * @param {object} [event]
      */
-    function onAutoSlidePlayerClick(event) {
+    onAutoSlidePlayerClick(event) {
         // Replay
-        if (isLastSlide() && config.loop === false) {
-            slide(0, 0);
-            resumeAutoSlide();
+        if (this.isLastSlide() && this.config.loop === false) {
+            this.slide(0, 0);
+            this.resumeAutoSlide();
         }
         // Resume
-        else if (autoSlidePaused) {
-            resumeAutoSlide();
+        else if (this.autoSlidePaused) {
+            this.resumeAutoSlide();
         }
         // Pause
         else {
-            pauseAutoSlide();
+            this.pauseAutoSlide();
         }
     }
-
-
-    // --------------------------------------------------------------------//
-    // ------------------------------- API --------------------------------//
-    // --------------------------------------------------------------------//
-
-    // The public  API
-    const API = {
-        VERSION,
-        initialize,
-        configure,
-        sync,
-        syncSlide,
-        syncFragments: fragments.sync.bind(fragments),
-        // Navigation methods
-        slide,
-        left: navigateLeft,
-        right: navigateRight,
-        up: navigateUp,
-        down: navigateDown,
-        prev: navigatePrev,
-        next: navigateNext,
-        // Navigation aliases
-        navigateLeft,
-        navigateRight,
-        navigateUp,
-        navigateDown,
-        navigatePrev,
-        navigateNext,
-        // Fragment methods
-        navigateFragment: fragments.goto.bind(fragments),
-        prevFragment: fragments.prev.bind(fragments),
-        nextFragment: fragments.next.bind(fragments),
-        // Event binding
-        on,
-        off,
-        // Legacy event binding methods left in for backwards compatibility
-        addEventListener: on,
-        removeEventListener: off,
-        // Forces an update in slide layout
-        layout,
-        // Randomizes the order of slides
-        shuffle,
-        // Returns an object with the available routes as booleans (left/right/top/bottom)
-        availableRoutes,
-        // Returns an object with the available fragments as booleans (prev/next)
-        availableFragments: fragments.availableRoutes.bind(fragments),
-        // Toggles a help overlay with keyboard shortcuts
-        toggleHelp,
-        // Toggles the overview mode on/off
-        toggleOverview: overview.toggle.bind(overview),
-        // Toggles the "black screen" mode on/off
-        togglePause,
-        // Toggles the auto slide mode on/off
-        toggleAutoSlide,
-        // Slide navigation checks
-        isFirstSlide,
-        isLastSlide,
-        isLastVerticalSlide,
-        isVerticalSlide,
-        // State checks
-        isPaused,
-        isAutoSliding,
-        isSpeakerNotes: notes.isSpeakerNotesWindow.bind(notes),
-        isOverview: overview.isActive.bind(overview),
-        isFocused: focus.isFocused.bind(focus),
-        isPrintingPDF: print.isPrintingPDF.bind(print),
-        // Checks if  has been loaded and is ready for use
-        isReady: () => ready,
-        // Slide preloading
-        loadSlide: slideContent.load.bind(slideContent),
-        unloadSlide: slideContent.unload.bind(slideContent),
-        // Adds or removes all internal event listeners
-        addEventListeners,
-        removeEventListeners,
-        dispatchEvent,
-        // Facility for persisting and restoring the presentation state
-        getState,
-        setState,
-        // Presentation progress on range of 0-1
-        getProgress,
-        // Returns the indices of the current, or specified, slide
-        getIndices,
-        // Returns an Array of key:value maps of the attributes of each
-        // slide in the deck
-        getSlidesAttributes,
-        // Returns the number of slides that we have passed
-        getSlidePastCount,
-        // Returns the total number of slides
-        getTotalSlides,
-        // Returns the slide element at the specified index
-        getSlide,
-        // Returns the previous slide element, may be null
-        getPreviousSlide: () => previousSlide,
-        // Returns the current slide element
-        getCurrentSlide: () => currentSlide,
-        // Returns the slide background element at the specified index
-        getSlideBackground,
-        // Returns the speaker notes string for a slide, or null
-        getSlideNotes: notes.getSlideNotes.bind(notes),
-        // Returns an Array of all slides
-        getSlides,
-        // Returns an array with all horizontal/vertical slides in the deck
-        getHorizontalSlides,
-        getVerticalSlides,
-        // Checks if the presentation contains two or more horizontal
-        // and vertical slides
-        hasHorizontalSlides,
-        hasVerticalSlides,
-        // Checks if the deck has navigated on either axis at least once
-        hasNavigatedHorizontally: () => navigationHistory.hasNavigatedHorizontally,
-        hasNavigatedVertically: () => navigationHistory.hasNavigatedVertically,
-        // Adds/removes a custom key binding
-        addKeyBinding: keyboard.addKeyBinding.bind(keyboard),
-        removeKeyBinding: keyboard.removeKeyBinding.bind(keyboard),
-        // Programmatically triggers a keyboard event
-        triggerKey: keyboard.triggerKey.bind(keyboard),
-        // Registers a new shortcut to include in the help overlay
-        registerKeyboardShortcut: keyboard.registerKeyboardShortcut.bind(keyboard),
-        getComputedSlideSize,
-        // Returns the current scale of the presentation content
-        getScale: () => scale,
-        // Returns the current configuration object
-        getConfig: () => config,
-        // Helper method, retrieves query string as a key:value map
-        getQueryHash: getQueryHash,
-        // Returns  DOM elements
-        getRevealElement: () => revealElement,
-        getSlidesElement: () => dom.slides,
-        getViewportElement: () => dom.viewport,
-        getBackgroundsElement: () => backgrounds.element,
-        // API for registering and retrieving plugins
-        registerPlugin: plugins.registerPlugin.bind(plugins),
-        hasPlugin: plugins.hasPlugin.bind(plugins),
-        getPlugin: plugins.getPlugin.bind(plugins),
-        getPlugins: plugins.getRegisteredPlugins.bind(plugins)
-    };
-
-    // Our internal API which controllers have access to
-    extend(Reveal, {
-        ...API,
-        // Methods for announcing content to screen readers
-        announceStatus,
-        getStatusText,
-        // Controllers
-        print,
-        focus,
-        progress,
-        controls,
-        location,
-        overview,
-        fragments,
-        slideContent,
-        slideNumber,
-        onUserInput,
-        closeOverlay,
-        updateSlidesVisibility,
-        layoutSlideContents,
-        transformSlides,
-        cueAutoSlide,
-        cancelAutoSlide
-    });
-    return API;
-
-};
+}
+// === end of slide content ===
 // ===============
 // Highlight js
 // ===============
-/*!
- * reveal.js plugin that adds syntax highlight support.
- */
-const RevealHighlightPlugin = {
-    id: 'highlight',
-    HIGHLIGHT_STEP_DELIMITER: '|',
-    HIGHLIGHT_LINE_DELIMITER: ',',
-    HIGHLIGHT_LINE_RANGE_DELIMITER: '-',
-    hljs: hljs,
+class HighlightPlugin {
+
+    constructor(hljs) {
+        this.id = 'highlight'
+        this.HIGHLIGHT_STEP_DELIMITER = '|'
+        this.HIGHLIGHT_LINE_DELIMITER = ','
+        this.HIGHLIGHT_LINE_RANGE_DELIMITER = '-'
+        this.hljs = hljs
+    }
+
     /**
      * Highlights code blocks withing the given deck.
      *
      * Note that this can be called multiple times if
      * there are multiple presentations on one page.
      *
-     * @param {Reveal} reveal the reveal.js instance
      */
-    init: function(reveal) {
+    init(dock) {
         // Read the plugin config options and provide fallbacks
-        var config = reveal.getConfig().highlight || {};
+        var config = dock.config.highlight || {};
+        const that = this;
         config.highlightOnLoad = typeof config.highlightOnLoad === 'boolean' ? config.highlightOnLoad : true;
         config.escapeHTML = typeof config.escapeHTML === 'boolean' ? config.escapeHTML : true;
-        [].slice.call(reveal.getRevealElement().querySelectorAll('pre code')).forEach(function(block) {
+        [].slice.call(dock.deckElement.querySelectorAll('pre code')).forEach(function(block) {
             // Code can optionally be wrapped in script template to avoid
             // HTML being parsed by the browser (i.e. when you need to
             // include <, > or & in your code).
@@ -6744,17 +6745,18 @@ const RevealHighlightPlugin = {
                 hljs.highlightBlock(event.currentTarget);
             }, false);
             if (config.highlightOnLoad) {
-                RevealHighlightPlugin.highlightBlock(block);
+                that.highlightBlock(block);
             }
         });
         // If we're printing to PDF, scroll the code highlights of
         // all blocks in the deck into view at once
-        reveal.on('pdf-ready', function() {
-            [].slice.call(reveal.getRevealElement().querySelectorAll('pre code[data-line-numbers].current-fragment')).forEach(function(block) {
-                RevealHighlightPlugin.scrollHighlightedLineIntoView(block, {}, true);
+        dock.on('pdf-ready', function() {
+            [].slice.call(dock.deckElement.querySelectorAll('pre code[data-line-numbers].current-fragment')).forEach(function(block) {
+                that.scrollHighlightedLineIntoView(block, {}, true);
             });
         });
-    },
+    }
+
     /**
      * Highlights a code block. If the <code> node has the
      * 'data-line-numbers' attribute we also generate slide
@@ -6763,7 +6765,7 @@ const RevealHighlightPlugin = {
      * If the block contains multiple line highlight steps,
      * we clone the block and create a fragment for each step.
      */
-    highlightBlock: function(block) {
+    highlightBlock(block) {
         hljs.highlightBlock(block);
         // Don't generate line numbers for empty code blocks
         if (block.innerHTML.trim().length === 0) return;
@@ -6772,7 +6774,7 @@ const RevealHighlightPlugin = {
             var scrollState = { currentBlock: block };
             // If there is at least one highlight step, generate
             // fragments
-            var highlightSteps = RevealHighlightPlugin.deserializeHighlightSteps(block.getAttribute('data-line-numbers'));
+            var highlightSteps = this.deserializeHighlightSteps(block.getAttribute('data-line-numbers'));
             if (highlightSteps.length > 1) {
                 // If the original code block has a fragment-index,
                 // each clone should follow in an incremental sequence
@@ -6780,13 +6782,14 @@ const RevealHighlightPlugin = {
                 if (typeof fragmentIndex !== 'number' || isNaN(fragmentIndex)) {
                     fragmentIndex = null;
                 }
+                const that = this;
                 // Generate fragments for all steps except the original block
                 highlightSteps.slice(1).forEach(function(highlight) {
                     var fragmentBlock = block.cloneNode(true);
-                    fragmentBlock.setAttribute('data-line-numbers', RevealHighlightPlugin.serializeHighlightSteps([highlight]));
+                    fragmentBlock.setAttribute('data-line-numbers', that.serializeHighlightSteps([highlight]));
                     fragmentBlock.classList.add('fragment');
                     block.parentNode.appendChild(fragmentBlock);
-                    RevealHighlightPlugin.highlightLines(fragmentBlock);
+                    that.highlightLines(fragmentBlock);
                     if (typeof fragmentIndex === 'number') {
                         fragmentBlock.setAttribute('data-fragment-index', fragmentIndex);
                         fragmentIndex += 1;
@@ -6794,32 +6797,36 @@ const RevealHighlightPlugin = {
                         fragmentBlock.removeAttribute('data-fragment-index');
                     }
                     // Scroll highlights into view as we step through them
-                    fragmentBlock.addEventListener('visible', RevealHighlightPlugin.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock, scrollState));
-                    fragmentBlock.addEventListener('hidden', RevealHighlightPlugin.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock.previousSibling, scrollState));
+                    fragmentBlock.addEventListener('visible', () => { that.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock, scrollState) });
+                    fragmentBlock.addEventListener('hidden', () => { that.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock.previousSibling, scrollState) });
                 });
                 block.removeAttribute('data-fragment-index')
-                block.setAttribute('data-line-numbers', RevealHighlightPlugin.serializeHighlightSteps([highlightSteps[0]]));
+                block.setAttribute('data-line-numbers', this.serializeHighlightSteps([highlightSteps[0]]));
             }
             // Scroll the first highlight into view when the slide
             // becomes visible. Note supported in IE11 since it lacks
             // support for Element.closest.
             var slide = typeof block.closest === 'function' ? block.closest('section:not(.stack)') : null;
             if (slide) {
+                const that = this;
                 var scrollFirstHighlightIntoView = function() {
-                    RevealHighlightPlugin.scrollHighlightedLineIntoView(block, scrollState, true);
+                    that.scrollHighlightedLineIntoView(block, scrollState, true);
                     slide.removeEventListener('visible', scrollFirstHighlightIntoView);
                 }
                 slide.addEventListener('visible', scrollFirstHighlightIntoView);
             }
-            RevealHighlightPlugin.highlightLines(block);
+            this.highlightLines(block);
         }
-    },
+    }
 
     /**
      * Animates scrolling to the first highlighted line
      * in the given code block.
      */
-    scrollHighlightedLineIntoView: function(block, scrollState, skipAnimation) {
+    scrollHighlightedLineIntoView(block, scrollState, skipAnimation) {
+        if (block.tagName === undefined) {
+            return;
+        }
         cancelAnimationFrame(scrollState.animationFrameID);
         // Match the scroll position of the currently visible
         // code block
@@ -6829,7 +6836,7 @@ const RevealHighlightPlugin = {
         // Remember the current code block so that we can match
         // its scroll position when showing/hiding fragments
         scrollState.currentBlock = block;
-        var highlightBounds = RevealHighlightPlugin.getHighlightedLineBounds(block)
+        var highlightBounds = this.getHighlightedLineBounds(block)
         var viewportHeight = block.offsetHeight;
         // Subtract padding from the viewport height
         var blockStyles = getComputedStyle(block);
@@ -6849,10 +6856,11 @@ const RevealHighlightPlugin = {
             // Don't attempt to scroll if there is no overflow
             if (block.scrollHeight <= viewportHeight) return;
             var time = 0;
+            const that = this;
             var animate = function() {
                 time = Math.min(time + 0.02, 1);
                 // Update our eased scroll position
-                block.scrollTop = startTop + (targetTop - startTop) * RevealHighlightPlugin.easeInOutQuart(time);
+                block.scrollTop = startTop + (targetTop - startTop) * that.easeInOutQuart(time);
                 // Keep animating unless we've reached the end
                 if (time < 1) {
                     scrollState.animationFrameID = requestAnimationFrame(animate);
@@ -6860,17 +6868,21 @@ const RevealHighlightPlugin = {
             };
             animate();
         }
-    },
+    }
 
     /**
      * The easing function used when scrolling.
      */
-    easeInOutQuart: function(t) {
+    easeInOutQuart(t) {
         // easeInOutQuart
         return t < .5 ? 8 * t * t * t * t : 1 - 8 * (--t) * t * t * t;
-    },
+    }
 
-    getHighlightedLineBounds: function(block) {
+
+    getHighlightedLineBounds(block) {
+        if (block.tagName === undefined) {
+            return { top: 0, bottom: 0 }
+        }
         var highlightedLines = block.querySelectorAll('.highlight-line');
         if (highlightedLines.length === 0) {
             return { top: 0, bottom: 0 };
@@ -6882,7 +6894,8 @@ const RevealHighlightPlugin = {
                 bottom: lastHighlight.offsetTop + lastHighlight.offsetHeight
             }
         }
-    },
+    }
+
     /**
      * Visually emphasize specific lines within a code block.
      * This only works on blocks with line numbering turned on.
@@ -6894,8 +6907,8 @@ const RevealHighlightPlugin = {
      * "2,5"	= highlights lines 2 & 5
      * "2,5-7"	= highlights lines 2, 5, 6 & 7
      */
-    highlightLines: function(block, linesToHighlight) {
-        var highlightSteps = RevealHighlightPlugin.deserializeHighlightSteps(linesToHighlight || block.getAttribute('data-line-numbers'));
+    highlightLines(block, linesToHighlight) {
+        var highlightSteps = this.deserializeHighlightSteps(linesToHighlight || block.getAttribute('data-line-numbers'));
         if (highlightSteps.length) {
             highlightSteps[0].forEach(function(highlight) {
                 var elementsToHighlight = [];
@@ -6915,28 +6928,30 @@ const RevealHighlightPlugin = {
                 }
             });
         }
-    },
+    }
+
     /**
      * Parses and formats a user-defined string of line
      * numbers to highlight.
      *
      * @example
-     * RevealHighlightPlugin.deserializeHighlightSteps( '1,2|3,5-10' )
+     * this.deserializeHighlightSteps( '1,2|3,5-10' )
      * // [
      * //   [ { start: 1 }, { start: 2 } ],
      * //   [ { start: 3 }, { start: 5, end: 10 } ]
      * // ]
      */
-    deserializeHighlightSteps: function(highlightSteps) {
+    deserializeHighlightSteps(highlightSteps) {
         // Remove whitespace
         highlightSteps = highlightSteps.replace(/\s/g, '');
         // Divide up our line number groups
-        highlightSteps = highlightSteps.split(RevealHighlightPlugin.HIGHLIGHT_STEP_DELIMITER);
+        highlightSteps = highlightSteps.split(this.HIGHLIGHT_STEP_DELIMITER);
+        const that = this;
         return highlightSteps.map(function(highlights) {
-            return highlights.split(RevealHighlightPlugin.HIGHLIGHT_LINE_DELIMITER).map(function(highlight) {
+            return highlights.split(that.HIGHLIGHT_LINE_DELIMITER).map(function(highlight) {
                 // Parse valid line numbers
                 if (/^[\d-]+$/.test(highlight)) {
-                    highlight = highlight.split(RevealHighlightPlugin.HIGHLIGHT_LINE_RANGE_DELIMITER);
+                    highlight = highlight.split(that.HIGHLIGHT_LINE_RANGE_DELIMITER);
                     var lineStart = parseInt(highlight[0], 10),
                         lineEnd = parseInt(highlight[1], 10);
                     if (isNaN(lineEnd)) {
@@ -6956,17 +6971,19 @@ const RevealHighlightPlugin = {
                 }
             });
         });
-    },
+    }
+
     /**
      * Serializes parsed line number data into a string so
      * that we can store it in the DOM.
      */
-    serializeHighlightSteps: function(highlightSteps) {
+    serializeHighlightSteps(highlightSteps) {
+        const that = this;
         return highlightSteps.map(function(highlights) {
             return highlights.map(function(highlight) {
                 // Line range
                 if (typeof highlight.end === 'number') {
-                    return highlight.start + RevealHighlightPlugin.HIGHLIGHT_LINE_RANGE_DELIMITER + highlight.end;
+                    return highlight.start + that.HIGHLIGHT_LINE_RANGE_DELIMITER + highlight.end;
                 }
                 // Single line
                 else if (typeof highlight.start === 'number') {
@@ -6976,116 +6993,457 @@ const RevealHighlightPlugin = {
                 else {
                     return '';
                 }
-            }).join(RevealHighlightPlugin.HIGHLIGHT_LINE_DELIMITER);
-        }).join(RevealHighlightPlugin.HIGHLIGHT_STEP_DELIMITER);
+            }).join(that.HIGHLIGHT_LINE_DELIMITER);
+        }).join(that.HIGHLIGHT_STEP_DELIMITER);
     }
+
 }
+// === markdown ===
 
-// Function to perform a better "data-trim" on code snippets
-// Will slice an indentation amount on each line of the snippet (amount based on the line having the lowest indentation length)
-function betterTrim(snippetEl) {
-    // Helper functions
-    function trimLeft(val) {
-        // Adapted from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Trim#Polyfill
-        return val.replace(/^[\s\uFEFF\xA0]+/g, '');
+const DEFAULT_SLIDE_SEPARATOR = '^\r?\n---\r?\n$',
+    DEFAULT_NOTES_SEPARATOR = 'notes?:',
+    DEFAULT_ELEMENT_ATTRIBUTES_SEPARATOR = '\\\.element\\\s*?(.+?)$',
+    DEFAULT_SLIDE_ATTRIBUTES_SEPARATOR = '\\\.slide:\\\s*?(\\\S.+?)$';
+
+const SCRIPT_END_PLACEHOLDER = '__SCRIPT_END__';
+
+const CODE_LINE_NUMBER_REGEX = /\[([\s\d,|-]*)\]/;
+
+const HTML_ESCAPE_MAP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+};
+
+class MarkdownPlugin {
+    id = 'markdown'
+    deck = {}
+        /**
+         * Starts processing and converting Markdown within the
+         * current reveal.js deck.
+         */
+    init(deck) {
+
+            deck = deck;
+
+            let renderer = new marked.Renderer();
+
+            renderer.code = (code, language) => {
+
+                // Off by default
+                let lineNumbers = '';
+
+                // Users can opt in to show line numbers and highlight
+                // specific lines.
+                // ```javascript []        show line numbers
+                // ```javascript [1,4-8]   highlights lines 1 and 4-8
+                if (CODE_LINE_NUMBER_REGEX.test(language)) {
+                    lineNumbers = language.match(CODE_LINE_NUMBER_REGEX)[1].trim();
+                    lineNumbers = `data-line-numbers="${lineNumbers}"`;
+                    language = language.replace(CODE_LINE_NUMBER_REGEX, '').trim();
+                }
+
+                // Escape before this gets injected into the DOM to
+                // avoid having the HTML parser alter our code before
+                // highlight.js is able to read it
+                code = this.escapeForHTML(code);
+
+                return `<pre><code ${lineNumbers} class="${language}">${code}</code></pre>`;
+            };
+
+            marked.setOptions({
+                renderer,
+                ...deck.config.markdown
+            });
+            const that = this;
+            return this.processSlides(deck.deckElement).then(() => { this.convertSlides(that) });
+
+        }
+        /**
+         * Retrieves the markdown contents of a slide section
+         * element. Normalizes leading tabs/whitespace.
+         */
+    getMarkdownFromSlide(section) {
+
+        // look for a <script> or <textarea data-template> wrapper
+        var template = section.querySelector('[data-template]') || section.querySelector('script');
+
+        // strip leading whitespace so it isn't evaluated as code
+        var text = (template || section).textContent;
+
+        // restore script end tags
+        text = text.replace(new RegExp(SCRIPT_END_PLACEHOLDER, 'g'), '</script>');
+
+        var leadingWs = text.match(/^\n?(\s*)/)[1].length,
+            leadingTabs = text.match(/^\n?(\t*)/)[1].length;
+
+        if (leadingTabs > 0) {
+            text = text.replace(new RegExp('\\n?\\t{' + leadingTabs + '}', 'g'), '\n');
+        } else if (leadingWs > 1) {
+            text = text.replace(new RegExp('\\n? {' + leadingWs + '}', 'g'), '\n');
+        }
+
+        return text;
+
     }
 
-    function trimLineBreaks(input) {
-        var lines = input.split('\n');
-        // Trim line-breaks from the beginning
-        for (var i = 0; i < lines.length; i++) {
-            if (lines[i].trim() === '') {
-                lines.splice(i--, 1);
-            } else break;
-        }
-        // Trim line-breaks from the end
-        for (var i = lines.length - 1; i >= 0; i--) {
-            if (lines[i].trim() === '') {
-                lines.splice(i, 1);
-            } else break;
-        }
-        return lines.join('\n');
-    }
-    // Main function for betterTrim()
-    return (function(snippetEl) {
-        var content = trimLineBreaks(snippetEl.innerHTML);
-        var lines = content.split('\n');
-        // Calculate the minimum amount to remove on each line start of the snippet (can be 0)
-        var pad = lines.reduce(function(acc, line) {
-            if (line.length > 0 && trimLeft(line).length > 0 && acc > line.length - trimLeft(line).length) {
-                return line.length - trimLeft(line).length;
+    /**
+     * Given a markdown slide section element, this will
+     * return all arguments that aren't related to markdown
+     * parsing. Used to forward any other user-defined arguments
+     * to the output markdown slide.
+     */
+    getForwardedAttributes(section) {
+
+        var attributes = section.attributes;
+        var result = [];
+
+        for (var i = 0, len = attributes.length; i < len; i++) {
+            var name = attributes[i].name,
+                value = attributes[i].value;
+
+            // disregard attributes that are used for markdown loading/parsing
+            if (/data\-(markdown|separator|vertical|notes)/gi.test(name)) continue;
+
+            if (value) {
+                result.push(name + '="' + value + '"');
+            } else {
+                result.push(name);
             }
-            return acc;
-        }, Number.POSITIVE_INFINITY);
-        // Slice each line with this amount
-        return lines.map(function(line, index) {
-                return line.slice(pad);
-            })
-            .join('\n');
-    })(snippetEl);
-}
+        }
 
+        return result.join(' ');
+
+    }
+
+    /**
+     * Inspects the given options and fills out default
+     * values for what's not defined.
+     */
+    getSlidifyOptions(options) {
+
+        options = options || {};
+        options.separator = options.separator || DEFAULT_SLIDE_SEPARATOR;
+        options.notesSeparator = options.notesSeparator || DEFAULT_NOTES_SEPARATOR;
+        options.attributes = options.attributes || '';
+
+        return options;
+
+    }
+
+    /**
+     * Helper function for constructing a markdown slide.
+     */
+    createMarkdownSlide(content, options) {
+
+        options = this.getSlidifyOptions(options);
+
+        var notesMatch = content.split(new RegExp(options.notesSeparator, 'mgi'));
+
+        if (notesMatch.length === 2) {
+            content = notesMatch[0] + '<aside class="notes">' + marked(notesMatch[1].trim()) + '</aside>';
+        }
+
+        // prevent script end tags in the content from interfering
+        // with parsing
+        content = content.replace(/<\/script>/g, SCRIPT_END_PLACEHOLDER);
+
+        return '<script type="text/template">' + content + '</script>';
+
+    }
+
+    /**
+     * Parses a data string into multiple slides based
+     * on the passed in separator arguments.
+     */
+    slidify(markdown, options) {
+
+        options = this.getSlidifyOptions(options);
+
+        var separatorRegex = new RegExp(options.separator + (options.verticalSeparator ? '|' + options.verticalSeparator : ''), 'mg'),
+            horizontalSeparatorRegex = new RegExp(options.separator);
+
+        var matches,
+            lastIndex = 0,
+            isHorizontal,
+            wasHorizontal = true,
+            content,
+            sectionStack = [];
+
+        // iterate until all blocks between separators are stacked up
+        while (matches = separatorRegex.exec(markdown)) {
+            var notes = null;
+
+            // determine direction (horizontal by default)
+            isHorizontal = horizontalSeparatorRegex.test(matches[0]);
+
+            if (!isHorizontal && wasHorizontal) {
+                // create vertical stack
+                sectionStack.push([]);
+            }
+
+            // pluck slide content from markdown input
+            content = markdown.substring(lastIndex, matches.index);
+
+            if (isHorizontal && wasHorizontal) {
+                // add to horizontal stack
+                sectionStack.push(content);
+            } else {
+                // add to vertical stack
+                sectionStack[sectionStack.length - 1].push(content);
+            }
+
+            lastIndex = separatorRegex.lastIndex;
+            wasHorizontal = isHorizontal;
+        }
+
+        // add the remaining slide
+        (wasHorizontal ? sectionStack : sectionStack[sectionStack.length - 1]).push(markdown.substring(lastIndex));
+
+        var markdownSections = '';
+
+        // flatten the hierarchical stack, and insert <section data-markdown> tags
+        for (var i = 0, len = sectionStack.length; i < len; i++) {
+            // vertical
+            if (sectionStack[i] instanceof Array) {
+                markdownSections += '<section ' + options.attributes + '>';
+
+                sectionStack[i].forEach(function(child) {
+                    markdownSections += '<section data-markdown>' + this.createMarkdownSlide(child, options) + '</section>';
+                });
+
+                markdownSections += '</section>';
+            } else {
+                markdownSections += '<section ' + options.attributes + ' data-markdown>' + this.createMarkdownSlide(sectionStack[i], options) + '</section>';
+            }
+        }
+
+        return markdownSections;
+
+    }
+
+    /**
+     * Parses any current data-markdown slides, splits
+     * multi-slide markdown into separate sections and
+     * handles loading of external markdown.
+     */
+    processSlides(scope) {
+        const that = this;
+        return new Promise(function(resolve) {
+
+            var externalPromises = [];
+
+            [].slice.call(scope.querySelectorAll('[data-markdown]:not([data-markdown-parsed])')).forEach(function(section, i) {
+
+                if (section.getAttribute('data-markdown').length) {
+
+                    externalPromises.push(that.loadExternalMarkdown(section).then(
+
+                        // Finished loading external file
+                        function(xhr, url) {
+                            section.outerHTML = that.slidify(xhr.responseText, {
+                                separator: section.getAttribute('data-separator'),
+                                verticalSeparator: section.getAttribute('data-separator-vertical'),
+                                notesSeparator: section.getAttribute('data-separator-notes'),
+                                attributes: that.getForwardedAttributes(section)
+                            });
+                        },
+
+                        // Failed to load markdown
+                        function(xhr, url) {
+                            section.outerHTML = '<section data-state="alert">' +
+                                'ERROR: The attempt to fetch ' + url + ' failed with HTTP status ' + xhr.status + '.' +
+                                'Check your browser\'s JavaScript console for more details.' +
+                                '<p>Remember that you need to serve the presentation HTML from a HTTP server.</p>' +
+                                '</section>';
+                        }
+
+                    ));
+
+                } else if (section.getAttribute('data-separator') || section.getAttribute('data-separator-vertical') || section.getAttribute('data-separator-notes')) {
+
+                    section.outerHTML = that.slidify(that.getMarkdownFromSlide(section), {
+                        separator: section.getAttribute('data-separator'),
+                        verticalSeparator: section.getAttribute('data-separator-vertical'),
+                        notesSeparator: section.getAttribute('data-separator-notes'),
+                        attributes: that.getForwardedAttributes(section)
+                    });
+
+                } else {
+                    section.innerHTML = that.createMarkdownSlide(that.getMarkdownFromSlide(section));
+                }
+
+            });
+
+            Promise.all(externalPromises).then(resolve);
+
+        });
+
+    }
+
+    loadExternalMarkdown(section) {
+
+        return new Promise(function(resolve, reject) {
+
+            var xhr = new XMLHttpRequest(),
+                url = section.getAttribute('data-markdown');
+
+            var datacharset = section.getAttribute('data-charset');
+
+            // see https://developer.mozilla.org/en-US/docs/Web/API/element.getAttribute#Notes
+            if (datacharset != null && datacharset != '') {
+                xhr.overrideMimeType('text/html; charset=' + datacharset);
+            }
+
+            xhr.onreadystatechange = function(section, xhr) {
+                if (xhr.readyState === 4) {
+                    // file protocol yields status code 0 (useful for local debug, mobile applications etc.)
+                    if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
+
+                        resolve(xhr, url);
+
+                    } else {
+
+                        reject(xhr, url);
+
+                    }
+                }
+            }.bind(this, section, xhr);
+
+            xhr.open('GET', url, true);
+
+            try {
+                xhr.send();
+            } catch (e) {
+                console.warn('Failed to get the Markdown file ' + url + '. Make sure that the presentation and the file are served by a HTTP server and the file can be found there. ' + e);
+                resolve(xhr, url);
+            }
+
+        });
+
+    }
+
+    /**
+     * Check if a node value has the attributes pattern.
+     * If yes, extract it and add that value as one or several attributes
+     * to the target element.
+     *
+     * You need Cache Killer on Chrome to see the effect on any FOM transformation
+     * directly on refresh (F5)
+     * http://stackoverflow.com/questions/5690269/disabling-chrome-cache-for-website-development/7000899#answer-11786277
+     */
+    addAttributeInElement(node, elementTarget, separator) {
+
+        var mardownClassesInElementsRegex = new RegExp(separator, 'mg');
+        var mardownClassRegex = new RegExp("([^\"= ]+?)=\"([^\"]+?)\"|(data-[^\"= ]+?)(?=[\" ])", 'mg');
+        var nodeValue = node.nodeValue;
+        var matches,
+            matchesClass;
+        if (matches = mardownClassesInElementsRegex.exec(nodeValue)) {
+
+            var classes = matches[1];
+            nodeValue = nodeValue.substring(0, matches.index) + nodeValue.substring(mardownClassesInElementsRegex.lastIndex);
+            node.nodeValue = nodeValue;
+            while (matchesClass = mardownClassRegex.exec(classes)) {
+                if (matchesClass[2]) {
+                    elementTarget.setAttribute(matchesClass[1], matchesClass[2]);
+                } else {
+                    elementTarget.setAttribute(matchesClass[3], "");
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Add attributes to the parent element of a text node,
+     * or the element of an attribute node.
+     */
+    addAttributes(section, element, previousElement, separatorElementAttributes, separatorSectionAttributes) {
+
+        if (element != null && element.childNodes != undefined && element.childNodes.length > 0) {
+            var previousParentElement = element;
+            for (var i = 0; i < element.childNodes.length; i++) {
+                var childElement = element.childNodes[i];
+                if (i > 0) {
+                    var j = i - 1;
+                    while (j >= 0) {
+                        var aPreviousChildElement = element.childNodes[j];
+                        if (typeof aPreviousChildElement.setAttribute == 'function' && aPreviousChildElement.tagName != "BR") {
+                            previousParentElement = aPreviousChildElement;
+                            break;
+                        }
+                        j = j - 1;
+                    }
+                }
+                var parentSection = section;
+                if (childElement.nodeName == "section") {
+                    parentSection = childElement;
+                    previousParentElement = childElement;
+                }
+                if (typeof childElement.setAttribute == 'function' || childElement.nodeType == Node.COMMENT_NODE) {
+                    this.addAttributes(parentSection, childElement, previousParentElement, separatorElementAttributes, separatorSectionAttributes);
+                }
+            }
+        }
+
+        if (element.nodeType == Node.COMMENT_NODE) {
+            if (this.addAttributeInElement(element, previousElement, separatorElementAttributes) == false) {
+                this.addAttributeInElement(element, section, separatorSectionAttributes);
+            }
+        }
+    }
+
+    /**
+     * Converts any current data-markdown slides in the
+     * DOM to HTML.
+     */
+    convertSlides(that) {
+
+        var sections = deck.deckElement.querySelectorAll('[data-markdown]:not([data-markdown-parsed])');
+
+        [].slice.call(sections).forEach(function(section) {
+
+            section.setAttribute('data-markdown-parsed', true)
+
+            var notes = section.querySelector('aside.notes');
+            var markdown = that.getMarkdownFromSlide(section);
+
+            section.innerHTML = marked(markdown);
+            that.addAttributes(section, section, null, section.getAttribute('data-element-attributes') ||
+                section.parentNode.getAttribute('data-element-attributes') ||
+                DEFAULT_ELEMENT_ATTRIBUTES_SEPARATOR,
+                section.getAttribute('data-attributes') ||
+                section.parentNode.getAttribute('data-attributes') ||
+                DEFAULT_SLIDE_ATTRIBUTES_SEPARATOR);
+
+            // If there were notes, we need to re-add them after
+            // having overwritten the section's HTML
+            if (notes) {
+                section.appendChild(notes);
+            }
+
+        });
+        return Promise.resolve();
+    }
+
+    escapeForHTML(input) {
+        return input.replace(/([&<>'"])/g, char => HTML_ESCAPE_MAP[char]);
+    }
+}
+// === end of markdown
 
 // === main ===
-
-/**
- * Expose the Reveal class to the window. To create a
- * new instance:
- * let deck = new Reveal( document.querySelector( '.reveal' ), {
- *   controls: false
- * } );
- * deck.initialize().then(() => {
- *   //  is ready
- * });
- */
-let Reveal = Deck;
-
-
-/**
- * The below is a thin shell that mimics the pre 4.0
- *  API and ensures backwards compatibility.
- * This API only allows for one Reveal instance per
- * page, whereas the new API above lets you run many
- * presentations on the same page.
- *
- * Reveal.initialize( { controls: false } ).then(() => {
- *   //  is ready
- * });
- */
-
 let enqueuedAPICalls = [];
-
-Reveal.initialize = options => {
-
-    // Create our singleton  instance
-    Object.assign(Reveal, new Deck(document.querySelector('.reveal'), options));
-
-    // Invoke any enqueued API calls
-    enqueuedAPICalls.map(method => method(Reveal));
-
-    return Reveal.initialize();
-
-}
-
-/**
- * The pre 4.0 API let you add event listener before
- * initializing. We maintain the same behavior by
- * queuing up premature API calls and invoking all
- * of them when Reveal.initialize is called.
- */
 ['configure', 'on', 'off', 'addEventListener', 'removeEventListener', 'registerPlugin'].forEach(method => {
-    Reveal[method] = (...args) => {
+    Deck[method] = (...args) => {
         enqueuedAPICalls.push(deck => deck[method].call(null, ...args));
     }
 });
-
-Reveal.isReady = () => false;
-
-Reveal.VERSION = VERSION;
-Reveal.initialize({
-    controls: true,
-    progress: true,
-    center: true,
-    hash: true,
-    plugins: [RevealHighlightPlugin]
-});
+const highlightPlugin = new HighlightPlugin(hljs);
+const markdownPlugin = new MarkdownPlugin();
+const deck = new Deck(document.querySelector('.reveal'))
+deck.initialize({ controls: true, progress: true, center: true, hash: true, plugins: [highlightPlugin, markdownPlugin] });
