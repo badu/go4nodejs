@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -19,11 +18,9 @@ var embededFiles embed.FS
 
 func getFileSystem(useOS bool) http.FileSystem {
 	if useOS {
-		fmt.Println("running from disk")
 		return http.FS(os.DirFS("static"))
 	}
 
-	fmt.Println("running from memory")
 	fsys, err := fs.Sub(embededFiles, "static")
 	if err != nil {
 		panic(err)
