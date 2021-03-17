@@ -14,14 +14,14 @@ func main() {
 }
 
 //go:embed static
-var embededFiles embed.FS
+var embeddedFiles embed.FS
 
 func getFileSystem(useOS bool) http.FileSystem {
 	if useOS {
 		return http.FS(os.DirFS("static"))
 	}
 
-	fsys, err := fs.Sub(embededFiles, "static")
+	fsys, err := fs.Sub(embeddedFiles, "static")
 	if err != nil {
 		panic(err)
 	}
