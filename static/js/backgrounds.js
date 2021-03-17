@@ -1,6 +1,5 @@
 import { Deck } from './deck.js';
-
-import { colorToRgb, queryAll, colorBrightness } from './utils.js';
+import { queryAll } from './utils.js';
 class Backgrounds {
 
     constructor(deck) {
@@ -164,13 +163,13 @@ class Backgrounds {
         }
 
         if (contrastColor) {
-            let rgb = colorToRgb(contrastColor);
+            let rgb = this.colorToRgb(contrastColor);
 
             // Ignore fully transparent backgrounds. Some browsers return
             // rgba(0,0,0,0) when reading the computed background color of
             // an element with no background
             if (rgb && rgb.a !== 0) {
-                if (colorBrightness(contrastColor) < 128) {
+                if (this.colorBrightness(contrastColor) < 128) {
                     slide.classList.add('has-dark-background');
                 } else {
                     slide.classList.add('has-light-background');
@@ -296,6 +295,58 @@ class Backgrounds {
         }
         verticalOffset = verticalSlideCount > 0 ? verticalOffsetMultiplier * indices.v : 0;
         this.element.style.backgroundPosition = horizontalOffset + 'px ' + -verticalOffset + 'px';
+    }
+
+    colorBrightness(color) {
+        if (typeof color === 'string') color = this.colorToRgb(color);
+        if (color) {
+            return (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
+        }
+        return null;
+    }
+
+
+    colorToRgb(color) {
+        let hex3 = color.match(/^#([0-9a-f]{3})$/i);
+        if (hex3 && hex3[1]) {
+            hex3 = hex3[1];
+            return {
+                r: parseInt(hex3.charAt(0), 16) * 0x11,
+                g: parseInt(hex3.charAt(1), 16) * 0x11,
+                b: parseInt(hex3.charAt(2), 16) * 0x11
+            };
+        }
+
+        let hex6 = color.match(/^#([0-9a-f]{6})$/i);
+        if (hex6 && hex6[1]) {
+            hex6 = hex6[1];
+            return {
+                r: parseInt(hex6.substr(0, 2), 16),
+                g: parseInt(hex6.substr(2, 2), 16),
+                b: parseInt(hex6.substr(4, 2), 16)
+            };
+        }
+
+        let rgb = color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+        if (rgb) {
+            return {
+                r: parseInt(rgb[1], 10),
+                g: parseInt(rgb[2], 10),
+                b: parseInt(rgb[3], 10)
+            };
+        }
+
+        let rgba = color.match(/^rgba\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\,\s*([\d]+|[\d]*.[\d]+)\s*\)$/i);
+        if (rgba) {
+            return {
+                r: parseInt(rgba[1], 10),
+                g: parseInt(rgba[2], 10),
+                b: parseInt(rgba[3], 10),
+                a: parseFloat(rgba[4])
+            };
+        }
+
+        return null;
     }
 }
 export { Backgrounds }

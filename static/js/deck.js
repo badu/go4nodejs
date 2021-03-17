@@ -2,7 +2,6 @@ import {
     closest,
     transformElement,
     deserialize,
-    toggleClass,
     queryAll,
     extend,
     SLIDES_SELECTOR,
@@ -174,9 +173,9 @@ class Deck {
         }
     }
 
-    createSingletonNode(container, tagname, classname, innerHTML = '') {
+    createSingletonNode(container, tagname, className, innerHTML = '') {
         // Find all nodes matching the description
-        let nodes = container.querySelectorAll('.' + classname);
+        let nodes = container.querySelectorAll('.' + className);
         // Check all matches to find one which is a direct child of
         // the specified container
         for (let i = 0; i < nodes.length; i++) {
@@ -187,7 +186,7 @@ class Deck {
         }
         // If no node was found, create it now
         let node = document.createElement(tagname);
-        node.className = classname;
+        node.className = className;
         node.innerHTML = innerHTML;
         container.appendChild(node);
         return node;
@@ -209,6 +208,14 @@ class Deck {
         this.dom.pauseOverlay = this.createSingletonNode(this.dom.wrapper, 'div', 'pause-overlay', this.config.controls ? '<button class="resume-button">Resume presentation</button>' : null); // Overlay graphic which is displayed during the paused mode
         this.dom.statusElement = this.createStatusElement();
         this.dom.wrapper.setAttribute('role', 'application');
+    }
+
+    toggleClass(el, className, value) {
+        if (value) {
+            el.classList.add(className);
+        } else {
+            el.classList.remove(className);
+        }
     }
 
     createStatusElement() {
@@ -281,9 +288,9 @@ class Deck {
         if (this.config.shuffle) {
             this.shuffle();
         }
-        toggleClass(this.dom.wrapper, 'embedded', this.config.embedded);
-        toggleClass(this.dom.wrapper, 'rtl', this.config.rtl);
-        toggleClass(this.dom.wrapper, 'center', this.config.center);
+        this.toggleClass(this.dom.wrapper, 'embedded', this.config.embedded);
+        this.toggleClass(this.dom.wrapper, 'rtl', this.config.rtl);
+        this.toggleClass(this.dom.wrapper, 'center', this.config.center);
         // Exit the paused mode if it was configured off
         if (this.config.pause === false) {
             this.resume();

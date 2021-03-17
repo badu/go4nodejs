@@ -164,8 +164,7 @@ class Location {
         location.search.replace(/[A-Z0-9]+?=([\w\.%-]*)/gi, a => {
             query[a.split('=').shift()] = a.split('=').pop();
         });
-        // Basic deserialization
-        for (let i in query) {
+        for (let i in query) { // Basic deserialization
             let value = query[i];
             query[i] = deserialize(unescape(value));
         }
