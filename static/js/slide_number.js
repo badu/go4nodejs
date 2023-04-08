@@ -8,9 +8,6 @@ class SlideNumber {
         this.deck.on('slided', function(event) {
             this.update();
         }.bind(this));
-        this.deck.on('synced', function(event) {
-            this.update();
-        }.bind(this));
     }
 
     render() {
@@ -21,7 +18,7 @@ class SlideNumber {
 
     configure(config, oldConfig) {
         let slideNumberDisplay = 'none';
-        if (config.slideNumber && !this.deck.print.isPrintingPDF()) {
+        if (config.slideNumber ) {
             if (config.showSlideNumber === 'all') {
                 slideNumberDisplay = 'block';
             } else if (config.showSlideNumber === 'speaker' && this.deck.notes.isSpeakerNotesWindow()) {

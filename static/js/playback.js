@@ -126,4 +126,5 @@ class Playback {
         }
     }
 }
-export { Playback };
+
+export {Playback};

@@ -1,6 +1,7 @@
-import { deserialize } from './utils.js';
+import {deserialize} from './utils.js';
 
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class Location {
 
     constructor(deck) {
@@ -11,10 +12,10 @@ class Location {
         // Delays updates to the URL due to a Chrome thumbnailer bug
         this.writeURLTimeout = 0;
         this.onWindowHashChange = this.onWindowHashChange.bind(this);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.writeURL();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.writeURL();
         }.bind(this));
     }
@@ -53,7 +54,8 @@ class Location {
             // Ensure the named link is a valid HTML ID attribute
             try {
                 element = document.getElementById(decodeURIComponent(name));
-            } catch (error) {}
+            } catch (error) {
+            }
 
             // Ensure that we're not already on a slide with the same name
             let isSameNameAsCurrentSlide = currentSlide ? currentSlide.getAttribute('id') === name : false;
@@ -63,12 +65,12 @@ class Location {
                 if (!isSameNameAsCurrentSlide || typeof f !== 'undefined') {
                     // ...find the position of the named slide and navigate to it
                     let slideIndices = this.deck.getIndices(element);
-                    this.deck.slide(slideIndices.h, slideIndices.v, f);
+                    this.deck.slide('location', slideIndices.h, slideIndices.v, f);
                 }
             }
             // If the slide doesn't exist, navigate to the current slide
             else {
-                this.deck.slide(indices.h || 0, indices.v || 0);
+                this.deck.slide('location', indices.h || 0, indices.v || 0);
             }
         } else {
             let hashIndexBase = config.hashOneBasedIndex ? 1 : 0;
@@ -86,7 +88,7 @@ class Location {
             }
 
             if (h !== indices.h || v !== indices.v || f !== undefined) {
-                this.deck.slide(h, v, f);
+                this.deck.slide('location', h, v, f);
             }
         }
     }
@@ -106,7 +108,7 @@ class Location {
             if (config.history) {
                 window.location.hash = hash;
             }
-            // If we're configured to reflect the current slide in the
+                // If we're configured to reflect the current slide in the
             // URL without pushing to history.
             else if (config.hash) {
                 // If the hash is empty, don't add it to the URL
@@ -174,4 +176,5 @@ class Location {
         return query;
     }
 }
-export { Location };
+
+export {Location};

@@ -2,12 +2,11 @@ const speakerViewHTML = `<html lang="en">
 <head>
     <meta charset="utf-8">
     <title>Speaker View</title>
-    <link rel="stylesheet" href="css/speaker.css">
+    <link rel="stylesheet" href="css/speaker.css?version=${Date.now()}">
 </head>
 <body>
-    <div id="connection-status">Loading speaker view...</div>
     <div id="current-slide"></div>
-    <div id="upcoming-slide"><span class="overlay-element label">Upcoming</span></div>
+    <div id="upcoming-slide"><span class="overlay-element label">Next</span></div>
     <div id="speaker-controls">
         <div class="speaker-controls-time">
             <h4 class="label">Time <span class="reset-button">Click to Reset</span></h4>
@@ -18,23 +17,52 @@ const speakerViewHTML = `<html lang="en">
                 <span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
             </div>
             <div class="clear"></div>
-            <h4 class="label pacing-title" style="display: none">Pacing – Time to finish current slide</h4>
+            <span class="label" id="total">0 Total</span><br />
+            <span class="label" id="focused">0 Focused</span><br />
+            <span class="label" id="unfocused">0 Unfocused</span><br />
             <div class="pacing" style="display: none">
                 <span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
             </div>
         </div>
-        <div class="speaker-controls-notes hidden">
+        <div class="speaker-controls-notes">
             <h4 class="label">Notes</h4>
             <div class="value"></div>
         </div>
-    </div>
+        <div class="speaker-controls-notes">
+            <span class="label" id="last-message"></span>
+        </div>
+        <div id="ws-connect" style="connection-status">
+            <span class="overlay-element label">Takeover</span>
+            <input id="totpInputCode" />
+            <button id="wsConnectButton">Go</button>
+        </div>
+    </div>    
+    <div id="debugger" style="position: absolute; width: 100%; height: 35%; bottom: 0; left: 0; right: 0;">
+        <textarea id="consoler" style="width: 100%;height: 100%;"></textarea>
+    </div>    
     <div id="speaker-layout" class="overlay-element interactive">
         <span class="speaker-layout-label"></span>
         <select class="speaker-layout-dropdown"></select>
     </div>
-    <script src="js/speaker.js"></script>
+    <script src="js/speaker.js?version=${Date.now()}"></script>
 </body>
 </html>`;
+
+import {
+    ClientStatsCommand,
+    ConnectedReplyCommand,
+    FragmentShownCommand,
+    HideControlsCommand,
+    OverviewHiddenCommand,
+    OverviewShownCommand,
+    PausedCommand,
+    ResumedCommand,
+    ShowControlsCommand,
+    SlidedCommand,
+    StatusReplyCommand,
+    StatusRequestCommand,
+} from './utils.js'
+
 class NotesPlugin {
     popup = null;
     deck = {};
@@ -44,7 +72,6 @@ class NotesPlugin {
         if (marked === undefined) {
             throw new Error("Marked JS not loaded?");
         }
-        this.post = this.post.bind(this);
     }
 
     init(deck) {
@@ -54,12 +81,10 @@ class NotesPlugin {
                 this.open();
             }
 
-            this.deck.keyboard.addKeyBinding({ keyCode: 83, key: 'S', description: 'Speaker notes view' }, function() { // Open the notes when the 's' key is hit
+            this.deck.keyboard.addKeyBinding({keyCode: 83, key: 'S', description: 'Speaker notes view'}, function () { // Open the notes when the 's' key is hit
                 this.open();
             }.bind(this));
         }
-        this.callAPI = this.callAPI.bind(this);
-        this.post = this.post.bind(this);
     }
 
     open() {
@@ -67,110 +92,30 @@ class NotesPlugin {
             this.popup.focus();
             return;
         }
-        this.popup = window.open('about:blank', 'Speaker Notes', 'width=1100,height=700');
+
+        this.popup = window.open('about:blank', 'Speaker Notes', `width=${window.screen.availWidth >> 1},height=${window.screen.availHeight}`);
         this.popup.marked = marked;
+        this.popup.deck = this.deck;
+        this.popup.HideControlsCommand = HideControlsCommand;
+        this.popup.ShowControlsCommand = ShowControlsCommand;
+        this.popup.SlidedCommand = SlidedCommand;
+        this.popup.PausedCommand = PausedCommand;
+        this.popup.ResumedCommand = ResumedCommand;
+        this.popup.StatusRequestCommand = StatusRequestCommand;
+        this.popup.StatusReplyCommand = StatusReplyCommand;
+        this.popup.OverviewShownCommand = OverviewShownCommand;
+        this.popup.OverviewHiddenCommand = OverviewHiddenCommand;
+        this.popup.ConnectedReplyCommand = ConnectedReplyCommand;
+        this.popup.FragmentShownCommand = FragmentShownCommand;
+        this.popup.ClientStatsCommand = ClientStatsCommand;
+
         this.popup.document.write(speakerViewHTML);
 
         if (!this.popup) {
             alert('Speaker view popup failed to open. Please make sure popups are allowed and reopen the speaker view.');
             return;
         }
-        this.connect();
-
-    }
-
-    onConnected() {
-        this.deck.on('slidechanged', this.post); // Monitor events that trigger a change in state
-        this.deck.on('fragmentshown', this.post);
-        this.deck.on('fragmenthidden', this.post);
-        this.deck.on('overviewhidden', this.post);
-        this.deck.on('overviewshown', this.post);
-        this.deck.on('paused', this.post);
-        this.deck.on('resumed', this.post);
-        this.post(); // Post the initial state
-    }
-
-    post() {
-        let slideElement = this.deck.currentSlide,
-            notesElement = slideElement.querySelector('aside.notes'),
-            fragmentElement = slideElement.querySelector('.current-fragment');
-
-        let messageData = {
-            namespace: 'speaker-notes',
-            type: 'state',
-            notes: '',
-            markdown: false,
-            whitespace: 'normal',
-            state: this.deck.getState()
-        };
-
-        if (slideElement.hasAttribute('data-notes')) { // Look for notes defined in a slide attribute
-            messageData.notes = slideElement.getAttribute('data-notes');
-            messageData.whitespace = 'pre-wrap';
-        }
-
-        if (fragmentElement) { // Look for notes defined in a fragment
-            let fragmentNotes = fragmentElement.querySelector('aside.notes');
-            if (fragmentNotes) {
-                notesElement = fragmentNotes;
-            } else if (fragmentElement.hasAttribute('data-notes')) {
-                messageData.notes = fragmentElement.getAttribute('data-notes');
-                messageData.whitespace = 'pre-wrap';
-                notesElement = null; // In case there are slide notes
-            }
-        }
-
-        if (notesElement) { // Look for notes defined in an aside element
-            messageData.notes = notesElement.innerHTML;
-            messageData.markdown = typeof notesElement.getAttribute('data-markdown') === 'string';
-        }
-        const message = JSON.stringify(messageData);
-        this.popup.postMessage(message, '*');
-    }
-
-    connect() {
-        let connectInterval = setInterval(function() { // Keep trying to connect until we get a 'connected' message back
-            this.popup.postMessage(JSON.stringify({
-                namespace: 'speaker-notes',
-                type: 'connect',
-                url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-                state: this.deck.getState()
-            }), '*');
-        }.bind(this), 500);
-
-        window.addEventListener('message', function(event) {
-            let data = JSON.parse(event.data);
-            if (!data) {
-                return;
-            }
-            switch (data.namespace) {
-                case 'speaker-notes':
-                    switch (data.type) {
-                        case 'connected':
-                            clearInterval(connectInterval);
-                            this.onConnected();
-                            break;
-                        case 'call':
-                            this.callAPI(data.methodName, data.arguments, data.callId);
-                            break;
-                    }
-                    break;
-            }
-        }.bind(this));
-    }
-
-    callAPI(method, args, callID) {
-        let result = this.deck[method].apply(this.deck, args);
-        if (result !== undefined && result.plugins !== undefined) {
-            result.plugins = undefined;
-        }
-        this.popup.postMessage(JSON.stringify({
-            namespace: 'speaker-notes',
-            type: 'return',
-            result: result,
-            callId: callID
-        }), '*');
-
     }
 }
-export { NotesPlugin };
+
+export {NotesPlugin};

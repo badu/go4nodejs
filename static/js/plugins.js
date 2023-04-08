@@ -1,4 +1,4 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
 
 class Plugins {
 
@@ -54,11 +54,11 @@ class Plugins {
         this.state = 'loading';
         plugins.forEach(this.registerPlugin);
         const initPlugins = this.initPlugins;
-        const promise = new Promise(function(resolve) {
+        const promise = new Promise(function (resolve) {
             let scripts = [],
                 scriptsToLoad = 0;
 
-            dependencies.forEach(function(dep) {
+            dependencies.forEach(function (dep) {
                 // Load if there's no condition or the condition is truthy
                 if (!dep.condition || dep.condition()) {
                     if (dep.async) {
@@ -79,7 +79,7 @@ class Plugins {
                 };
 
                 // Load synchronous scripts
-                scripts.forEach(function(script) {
+                scripts.forEach(function (script) {
                     if (typeof script.id === 'string') {
                         this.registerPlugin(script);
                         scriptLoadedCallback(script);
@@ -101,7 +101,7 @@ class Plugins {
         let pluginValues = Object.values(this.registeredPlugins);
         const loadAsync = this.loadAsync;
         const deck = this.deck;
-        const promise = new Promise(function(resolve) {
+        const promise = new Promise(function (resolve) {
             let pluginsToInitialize = pluginValues.length;
             // If there are no plugins, skip this step
             if (pluginsToInitialize === 0) {
@@ -110,7 +110,7 @@ class Plugins {
             // ... otherwise initialize plugins
             else {
                 let initNextPlugin;
-                let afterPlugInitialized = function() {
+                let afterPlugInitialized = function () {
                     if (--pluginsToInitialize === 0) {
                         loadAsync().then(resolve);
                     } else {
@@ -120,7 +120,7 @@ class Plugins {
 
                 let i = 0;
                 // Initialize plugins serially
-                initNextPlugin = function() {
+                initNextPlugin = function () {
                     let plugin = pluginValues[i++];
                     // If the plugin has an 'init' method, invoke it
                     if (typeof plugin.init === 'function') {
@@ -144,7 +144,7 @@ class Plugins {
     loadAsync() {
         this.state = 'loaded';
         if (this.asyncDependencies.length) {
-            this.asyncDependencies.forEach(function(asyncDep) {
+            this.asyncDependencies.forEach(function (asyncDep) {
                 this.loadScript(asyncDep.src, asyncDep.callback);
             }, this);
         }
@@ -158,7 +158,7 @@ class Plugins {
             plugin = arguments[1];
             plugin.id = arguments[0];
         }
-        // Plugin can optionally be a function which we call
+            // Plugin can optionally be a function which we call
         // to create an instance of the plugin
         else if (typeof plugin === 'function') {
             plugin = plugin();
@@ -193,4 +193,5 @@ class Plugins {
         return this.registeredPlugins;
     }
 }
-export { Plugins }
+
+export {Plugins}

@@ -1,4 +1,5 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class Progress {
 
     constructor(deck) {
@@ -7,10 +8,10 @@ class Progress {
         }
         this.deck = deck;
         this.onProgressClicked = this.onProgressClicked.bind(this);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.update();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.update();
         }.bind(this));
     }
@@ -60,11 +61,8 @@ class Progress {
         event.preventDefault();
         let slidesTotal = this.deck.getHorizontalSlides().length;
         let slideIndex = Math.floor((event.clientX / this.getMaxWidth()) * slidesTotal);
-        if (this.deck.config.rtl) {
-            slideIndex = slidesTotal - slideIndex;
-        }
-        this.deck.slide(slideIndex);
+        this.deck.slide('progress', slideIndex);
     }
 }
 
-export { Progress }
+export {Progress}

@@ -1,6 +1,7 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
 
 const SWIPE_THRESHOLD = 40;
+
 class Touch {
 
     constructor(deck) {
@@ -23,11 +24,11 @@ class Touch {
 
     bind() {
         let el = this.deck.deckElement;
-        if ('onpointerdown' in window) { // Use W3C pointer events           
+        if ('onpointerdown' in window) { // Use W3C pointer events
             el.addEventListener('pointerdown', this.onPointerDown, false);
             el.addEventListener('pointermove', this.onPointerMove, false);
             el.addEventListener('pointerup', this.onPointerUp, false);
-        } else if (window.navigator.msPointerEnabled) { // IE 10 uses prefixed version of pointer events            
+        } else if (window.navigator.msPointerEnabled) { // IE 10 uses prefixed version of pointer events
             el.addEventListener('MSPointerDown', this.onPointerDown, false);
             el.addEventListener('MSPointerMove', this.onPointerMove, false);
             el.addEventListener('MSPointerUp', this.onPointerUp, false);
@@ -76,28 +77,20 @@ class Touch {
             let currentX = event.touches[0].clientX;
             let currentY = event.touches[0].clientY;
             if (event.touches.length === 1 && this.touchStartCount !== 2) { // There was only one touch point, look for a swipe
-                let availableRoutes = this.deck.availableRoutes({ includeFragments: true });
+                let availableRoutes = this.deck.availableRoutes({includeFragments: true});
                 let deltaX = currentX - this.touchStartX,
                     deltaY = currentY - this.touchStartY;
                 if (deltaX > SWIPE_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY)) {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
-                        if (config.rtl) {
-                            this.deck.navigateNext();
-                        } else {
-                            this.deck.navigatePrev();
-                        }
+                        this.deck.navigatePrev();
                     } else {
                         this.deck.navigateLeft();
                     }
                 } else if (deltaX < -SWIPE_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY)) {
                     this.touchCaptured = true;
                     if (config.navigationMode === 'linear') {
-                        if (config.rtl) {
-                            this.deck.navigatePrev();
-                        } else {
-                            this.deck.navigateNext();
-                        }
+                        this.deck.navigateNext();
                     } else {
                         this.deck.navigateRight();
                     }
@@ -137,23 +130,24 @@ class Touch {
 
     onPointerDown(event) {
         if (event.pointerType === event.MSPOINTER_TYPE_TOUCH || event.pointerType === "touch") {
-            event.touches = [{ clientX: event.clientX, clientY: event.clientY }];
+            event.touches = [{clientX: event.clientX, clientY: event.clientY}];
             this.onTouchStart(event);
         }
     }
 
     onPointerMove(event) {
         if (event.pointerType === event.MSPOINTER_TYPE_TOUCH || event.pointerType === "touch") {
-            event.touches = [{ clientX: event.clientX, clientY: event.clientY }];
+            event.touches = [{clientX: event.clientX, clientY: event.clientY}];
             this.onTouchMove(event);
         }
     }
 
     onPointerUp(event) {
         if (event.pointerType === event.MSPOINTER_TYPE_TOUCH || event.pointerType === "touch") {
-            event.touches = [{ clientX: event.clientX, clientY: event.clientY }];
+            event.touches = [{clientX: event.clientX, clientY: event.clientY}];
             this.onTouchEnd(event);
         }
     }
 }
-export { Touch }
+
+export {Touch}

@@ -1,9 +1,8 @@
-import { Deck } from './deck.js';
-
+import {Deck} from './deck.js';
 
 class ZoomPlugin {
     id = 'zoom';
-    level = 1; // The current zoom level (scale)   
+    level = 1; // The current zoom level (scale)
     mouseX = 0; // The current mouse position, used for panning
     mouseY = 0;
     panEngageTimeout = -1; // Timeout before pan is activated
@@ -11,7 +10,7 @@ class ZoomPlugin {
 
     magnify(rect, scale) {
 
-        var scrollOffset = getScrollOffset();
+        var scrollOffset = this.getScrollOffset();
 
         // Ensure a width/height is set
         rect.width = rect.width || 1;
@@ -135,27 +134,27 @@ class ZoomPlugin {
         }
 
         // Zoom out if the user hits escape
-        document.addEventListener('keyup', function(event) {
+        document.addEventListener('keyup', function (event) {
             if (this.level !== 1 && event.keyCode === 27) {
                 this.out();
             }
         }.bind(this));
 
         // Monitor mouse movement for panning
-        document.addEventListener('mousemove', function(event) {
+        document.addEventListener('mousemove', function (event) {
             if (this.level !== 1) {
                 this.mouseX = event.clientX;
                 this.mouseY = event.clientY;
             }
         }.bind(this));
 
-        this.deck.deckElement.addEventListener('mousedown', function(event) {
+        this.deck.deckElement.addEventListener('mousedown', function (event) {
             var defaultModifier = /Linux/.test(window.navigator.platform) ? 'ctrl' : 'alt';
 
             var modifier = (this.deck.config.zoomKey ? this.deck.config.zoomKey : defaultModifier) + 'Key';
             var zoomLevel = (this.deck.config.zoomLevel ? this.deck.config.zoomLevel : 2);
 
-            if (event[modifier] && !dethis.deckk.overview.isActive()) {
+            if (event[modifier] && !this.deck.overview.isActive()) {
                 event.preventDefault();
 
                 this.to({
@@ -174,62 +173,64 @@ class ZoomPlugin {
         // to another element without zooming out first
         if (this.level !== 1) {
             this.out();
-        } else {
-            options.x = options.x || 0;
-            options.y = options.y || 0;
+            return
+        }
 
-            // If an element is set, that takes precedence
-            if (!!options.element) {
-                // Space around the zoomed in element to leave on screen
-                var padding = 20;
-                var bounds = options.element.getBoundingClientRect();
+        options.x = options.x || 0;
+        options.y = options.y || 0;
 
-                options.x = bounds.left - padding;
-                options.y = bounds.top - padding;
-                options.width = bounds.width + (padding * 2);
-                options.height = bounds.height + (padding * 2);
-            }
+        // If an element is set, that takes precedence
+        if (!!options.element) {
+            // Space around the zoomed in element to leave on screen
+            var padding = 20;
+            var bounds = options.element.getBoundingClientRect();
 
-            // If width/height values are set, calculate scale from those values
-            if (options.width !== undefined && options.height !== undefined) {
-                options.scale = Math.max(Math.min(window.innerWidth / options.width, window.innerHeight / options.height), 1);
-            }
+            options.x = bounds.left - padding;
+            options.y = bounds.top - padding;
+            options.width = bounds.width + (padding * 2);
+            options.height = bounds.height + (padding * 2);
+        }
 
-            if (options.scale > 1) {
-                options.x *= options.scale;
-                options.y *= options.scale;
+        // If width/height values are set, calculate scale from those values
+        if (options.width !== undefined && options.height !== undefined) {
+            options.scale = Math.max(Math.min(window.innerWidth / options.width, window.innerHeight / options.height), 1);
+        }
 
-                magnify(options, options.scale);
+        if (options.scale > 1) {
+            options.x *= options.scale;
+            options.y *= options.scale;
 
-                if (options.pan !== false) {
+            this.magnify(options, options.scale);
 
-                    // Wait with engaging panning as it may conflict with the
-                    // zoom transition
-                    this.panEngageTimeout = setTimeout(function() {
-                        this.panUpdateInterval = setInterval(pan, 1000 / 60);
-                    }, 800);
+            if (options.pan !== false) {
 
-                }
+                // Wait with engaging panning as it may conflict with the
+                // zoom transition
+                this.panEngageTimeout = setTimeout(function () {
+                    this.panUpdateInterval = setInterval(pan, 1000 / 60);
+                }, 800);
+
             }
         }
+
     }
 
     out() {
         clearTimeout(this.panEngageTimeout);
         clearInterval(this.panUpdateInterval);
 
-        this.magnify({ x: 0, y: 0 }, 1);
+        this.magnify({x: 0, y: 0}, 1);
 
         this.level = 1;
     }
 
-    magnify(options) { this.to(options) }
-
-    reset() { this.out() }
+    reset() {
+        this.out()
+    }
 
     zoomLevel() {
         return this.level;
     }
 }
 
-export { ZoomPlugin };
+export {ZoomPlugin};

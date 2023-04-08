@@ -1,36 +1,48 @@
 import {
+    ClientStatsCommand,
     closest,
-    transformElement,
+    ConnectedReplyCommand,
+    decodeWSMessageType,
     deserialize,
-    queryAll,
     extend,
-    SLIDES_SELECTOR,
+    FragmentShownCommand,
+    HideControlsCommand,
     isMobile,
-    supportsZoom
+    OverviewHiddenCommand,
+    OverviewShownCommand,
+    PausedCommand,
+    queryAll,
+    ResumedCommand,
+    ShowControlsCommand,
+    SlidedCommand,
+    SLIDES_SELECTOR,
+    StatusReplyCommand,
+    StatusRequestCommand,
+    supportsZoom,
+    transformElement,
 } from './utils.js'
 
-import { Config } from './config.js';
-import { Fragments } from './fragments.js';
-import { Controls } from './controls.js';
-import { Keyboard } from './keyboard.js';
-import { Location } from './location.js';
-import { Notes } from './notes.js';
-import { Overview } from './overview.js';
-import { Playback } from './playback.js';
-import { Pointer } from './pointer.js';
-import { Print } from './print.js';
-import { Progress } from './progress.js';
-import { Touch } from './touch.js'
-import { SlideNumber } from './slide_number.js';
-import { Plugins } from './plugins.js';
-import { AutoAnimate } from './auto_animate.js';
-import { Backgrounds } from './backgrounds.js';
-import { SlideContent } from './slide_content.js';
-import { Focus } from './focus.js';
+import {Config} from './config.js';
+import {Fragments} from './fragments.js';
+import {Controls} from './controls.js';
+import {Keyboard} from './keyboard.js';
+import {Location} from './location.js';
+import {Notes} from './notes.js';
+import {Overview} from './overview.js';
+import {Playback} from './playback.js';
+import {Pointer} from './pointer.js';
+import {Progress} from './progress.js';
+import {Touch} from './touch.js'
+import {SlideNumber} from './slide_number.js';
+import {Plugins} from './plugins.js';
+import {AutoAnimate} from './auto_animate.js';
+import {Backgrounds} from './backgrounds.js';
+import {SlideContent} from './slide_content.js';
+import {Focus} from './focus.js';
 
 const HORIZONTAL_SLIDES_SELECTOR = '.slides>section';
 const VERTICAL_SLIDES_SELECTOR = '.slides>section.present>section';
-const POST_MESSAGE_METHOD_BLACKLIST = /registerPlugin|registerKeyboardShortcut|addKeyBinding|addEventListener/; // Methods that may not be invoked via the postMessage API
+
 class Deck {
     config = new Config();
     ready = false; // Flags if  is loaded (has dispatched the 'ready' event)
@@ -43,8 +55,8 @@ class Deck {
         hasNavigatedVertically: false
     };
     state = []; // Slides may have a data-state attribute which we pick up and apply as a class to the body. This list contains the combined state of all current slides.
-    scale = 1; // The current scale of the presentation (see width/height config)    
-    slidesTransform = { layout: '', overview: '' }; // CSS transform that is currently applied to the slides container, split into two groups
+    scale = 1; // The current scale of the presentation (see width/height config)
+    slidesTransform = {layout: '', overview: ''}; // CSS transform that is currently applied to the slides container, split into two groups
     dom = {}; // Cached references to DOM elements
     eventsAreBound = false; // Flags if the interaction event listeners are bound
     transition = 'idle'; // The current slide transition state; idle or running
@@ -54,6 +66,9 @@ class Deck {
     autoSlideStartTime = -1;
     autoSlidePaused = false;
     deckElement = {};
+    wsConn = {};
+    wsConnected = false;
+    connectionNumber = 0;
 
     constructor(el) {
         this.deckElement = el;
@@ -72,19 +87,16 @@ class Deck {
         this.progress = new Progress(this);
         this.pointer = new Pointer(this);
         this.plugins = new Plugins(this);
-        this.print = new Print(this);
         this.focus = new Focus(this);
         this.touch = new Touch(this);
         this.notes = new Notes(this);
 
         this.onTransitionEnd = this.onTransitionEnd.bind(this);
         this.onPageVisibilityChange = this.onPageVisibilityChange.bind(this);
-        this.onPostMessage = this.onPostMessage.bind(this);
         this.resume = this.resume.bind(this);
         this.onPreviewLinkClicked = this.onPreviewLinkClicked.bind(this);
         this.closeOverlay = this.closeOverlay.bind(this);
         this.layout = this.layout.bind(this);
-        this.dispatchPostMessage = this.dispatchPostMessage.bind(this);
         this.dispatchEvent = this.dispatchEvent.bind(this);
         this.onUserInput = this.onUserInput.bind(this);
         this.onAutoSlidePlayerClick = this.onAutoSlidePlayerClick.bind(this);
@@ -103,17 +115,16 @@ class Deck {
     }
 
     initialize(initOptions) {
-        this.config = {...this.config, ...initOptions, ...this.location.getQueryHash() };
+        this.config = {...this.config, ...initOptions, ...this.location.getQueryHash()};
         this.setViewport();
         window.addEventListener('load', this.layout, false); // Force a layout when the whole page, incl fonts, has loaded
-        this.plugins.load(this.config.plugins, this.config.dependencies).then(function() { // Register plugins and load dependencies, then move on to #start()
+        this.plugins.load(this.config.plugins, this.config.dependencies).then(function () { // Register plugins and load dependencies, then move on to #start()
             this.start()
         }.bind(this));
         return new Promise(resolve => this.addEventListener('ready', resolve));
     }
 
     setViewport() {
-
         if (this.config.embedded === true) { // Embedded decks use the reveal element as their viewport
             this.dom.viewport = closest(revealElement, '.reveal-viewport') || revealElement;
         } else { // Full-page decks use the body as their viewport
@@ -127,13 +138,12 @@ class Deck {
         this.ready = true;
         this.removeHiddenSlides(); // Remove slides hidden with data-visibility
         this.setupDOM(); // Make sure we've got all the DOM elements we need
-        this.setupPostMessage(); // Listen to messages posted to this window
         this.setupScrollPrevention(); // Prevent the slides from being scrolled out of view
         this.resetVerticalSlides(); // Resets all vertical slides so that only the first is visible
         this.configure(); // Updates the presentation to match the current configuration values
         this.location.readURL(); // Read the initial hash
-        this.backgrounds.update(true); // Create slide backgrounds       
-        let timeoutFn = function() { // Notify listeners that the presentation is ready but use a 1ms timeout to ensure it's not fired synchronously after #initialize()
+        this.backgrounds.update(true); // Create slide backgrounds
+        let timeoutFn = function () { // Notify listeners that the presentation is ready but use a 1ms timeout to ensure it's not fired synchronously after #initialize()
             // Enable transitions now that we're loaded
             this.dom.slides.classList.remove('no-transition');
             this.dom.wrapper.classList.add('ready');
@@ -141,6 +151,7 @@ class Deck {
             const indexv = this.indexv;
             const currentSlide = this.currentSlide;
             const target = this.dom.wrapper;
+
             this.dispatchEvent({
                 target: target,
                 type: 'ready',
@@ -150,24 +161,153 @@ class Deck {
                     currentSlide
                 }
             });
-            this.dispatchPostMessage('ready')
+
+            if (!/receiver/i.test(window.location.search)) {// if it's not the receiver (speaker notes)
+                let permission = Notification.requestPermission();
+
+                if (window["WebSocket"]) {
+                    if (this.wsConnected) {
+                        console.error('CLIENT ALREADY CONNECTED TO WEBSOCKET!');
+                        return
+                    }
+
+                    this.wsConn = new WebSocket("ws://" + document.location.host + "/ws");
+
+                    this.wsConn.onclose = function (evt) {
+                        console.log('[WS-Client] last message', 'this is the end, beautiful friend.')
+                        this.showControls();
+                        this.wsConnected = false;
+
+                    }.bind(this);
+
+                    this.wsConn.onmessage = function (evt) {
+                        try {
+                            const decoded = JSON.parse(evt.data)
+                            if (!decoded.com) {
+                                console.error('Invalid data received', evt.data);
+                                return
+                            }
+
+                            console.log('[ws-message]', decodeWSMessageType(decoded), decoded);
+
+                            switch (decoded.com) {
+                                case ConnectedReplyCommand:
+                                    if (decoded.s === 5) {
+                                        this.connectionNumber = decoded.c;
+                                    }
+                                    console.log(`we've just connected #${decoded.c}. Request slide number.`);
+                                    this.wsConn.send(JSON.stringify({
+                                        com: StatusRequestCommand,
+                                        c: this.connectionNumber
+                                    }));
+                                    break;
+
+                                case StatusRequestCommand:// nothing to do, but we don't want to see this event in default branch
+                                    break;
+
+                                case StatusReplyCommand:
+                                    if (decoded.c === this.connectionNumber) {
+                                        if (decoded.s !== -1) {
+                                            console.log('Mr Speaker replied', decoded.state);
+                                            this.setState(decoded.state);
+                                            this.hideControls();
+                                        } else {
+                                            console.log('Mr Speaker is not present');
+                                        }
+                                    }
+                                    break;
+
+                                case HideControlsCommand:
+                                    this.setState(decoded.state);
+                                    this.hideControls();
+                                    break;
+
+                                case ShowControlsCommand:
+                                    this.showControls();
+                                    break;
+
+                                case SlidedCommand:
+                                    this.setState(decoded.state);
+                                    break;
+
+                                case PausedCommand:
+                                    this.pause();
+                                    break;
+
+                                case ResumedCommand:
+                                    this.resume();
+                                    break;
+
+                                case OverviewShownCommand:
+                                    this.overview.activate();
+                                    break;
+
+                                case OverviewHiddenCommand:
+                                    this.overview.deactivate();
+                                    break;
+
+                                case FragmentShownCommand:
+                                    this.navigateNext();
+                                    break;
+
+                                case DisplayNotificationCommand:
+                                    if (this.config.notificationsAllowed) {
+                                        new Notification(decoded.m);
+                                    }
+                                    break;
+
+                                default:
+                                    console.error('unknown event received', decoded);
+                                    break;
+                            }
+
+                        } catch (e) {
+                            console.error(`[WS-Client] failed to decode ${evt.data} due to ${e}`);
+                        }
+
+                    }.bind(this);
+
+                    this.wsConn.onopen = function () {
+                        this.wsConnected = true;
+                    }.bind(this);
+
+                    this.wsConn.onerror = function (event) {
+                        console.log('[WS-Client] error', event);
+                        this.wsConnected = false;
+                    }.bind(this);
+                } else {
+                    alert("Your browser doesn't support WebSocket");
+                }
+            }
+
         }.bind(this);
 
         setTimeout(timeoutFn, 1);
+    }
 
-        if (this.print.isPrintingPDF()) { // Special setup and config is required when printing to PDF
-            this.removeEventListeners();
-            if (document.readyState === 'complete') { // The document needs to have loaded for the PDF layout measurements to be accurate
-                this.print.setupPDF();
-            } else {
-                window.addEventListener('load', this.print.setupPDF);
-            }
-        }
+    hideControls() {
+        this.eventsAreBound = false;
+        this.touch.unbind();
+        this.focus.unbind();
+        this.keyboard.unbind();
+        this.controls.unbind();
+        this.controls.hide();
+        this.dom.pauseOverlay.removeEventListener('click', this.resume, false);
+    }
+
+    showControls() {
+        this.eventsAreBound = true;
+        if (this.config.touch) this.touch.bind();
+        if (this.config.keyboard) this.keyboard.bind();
+        this.controls.bind();
+        this.focus.bind();
+        this.controls.show();
+        this.dom.pauseOverlay.addEventListener('click', this.resume, false);
     }
 
     removeHiddenSlides() {
         if (!this.config.showHiddenSlides) {
-            queryAll(this.dom.wrapper, 'section[data-visibility="hidden"]').forEach(function(slide) {
+            queryAll(this.dom.wrapper, 'section[data-visibility="hidden"]').forEach(function (slide) {
                 slide.parentNode.removeChild(slide);
             });
         }
@@ -190,7 +330,6 @@ class Deck {
         node.innerHTML = innerHTML;
         container.appendChild(node);
         return node;
-
     }
 
     setupDOM() {
@@ -202,10 +341,10 @@ class Deck {
         }
         this.backgrounds.render();
         this.slideNumber.render();
-        this.controls.render(this.deckElement, this.config.rtl);
+        this.controls.render(this.deckElement);
         this.progress.render();
         this.notes.render();
-        this.dom.pauseOverlay = this.createSingletonNode(this.dom.wrapper, 'div', 'pause-overlay', this.config.controls ? '<button class="resume-button">Resume presentation</button>' : null); // Overlay graphic which is displayed during the paused mode
+        this.dom.pauseOverlay = this.createSingletonNode(this.dom.wrapper, 'div', 'pause-overlay', this.eventsAreBound ? '<button class="resume-button">Resume presentation</button>' : '<div class="resume-button">Speaker has paused the presentation. Please wait!</div>'); // Overlay graphic which is displayed during the paused mode
         this.dom.statusElement = this.createStatusElement();
         this.dom.wrapper.setAttribute('role', 'application');
     }
@@ -250,7 +389,7 @@ class Deck {
             let isAriaHidden = node.getAttribute('aria-hidden');
             let isDisplayHidden = window.getComputedStyle(node)['display'] === 'none';
             if (isAriaHidden !== 'true' && !isDisplayHidden) {
-                Array.from(node.childNodes).forEach(function(child) {
+                Array.from(node.childNodes).forEach(function (child) {
                     text += this.getStatusText(child);
                 }, this);
             }
@@ -260,7 +399,7 @@ class Deck {
     }
 
     setupScrollPrevention() {
-        setInterval(function() {
+        setInterval(function () {
             if (this.dom.wrapper.scrollTop !== 0 || this.dom.wrapper.scrollLeft !== 0) {
                 this.dom.wrapper.scrollTop = 0;
                 this.dom.wrapper.scrollLeft = 0;
@@ -269,9 +408,9 @@ class Deck {
     }
 
     configure(options) {
-        const oldConfig = {...this.config }
-            // New config options may be passed when this method
-            // is invoked through the API after initialization
+        const oldConfig = {...this.config}
+        // New config options may be passed when this method
+        // is invoked through the API after initialization
         if (typeof options === 'object') extend(this.config, options);
         // Abort if  hasn't finished loading, config
         // changes will be applied automatically once ready
@@ -289,7 +428,7 @@ class Deck {
             this.shuffle();
         }
         this.toggleClass(this.dom.wrapper, 'embedded', this.config.embedded);
-        this.toggleClass(this.dom.wrapper, 'rtl', this.config.rtl);
+        this.toggleClass(this.dom.wrapper, 'rtl', false);
         this.toggleClass(this.dom.wrapper, 'center', this.config.center);
         // Exit the paused mode if it was configured off
         if (this.config.pause === false) {
@@ -312,7 +451,7 @@ class Deck {
         }
         // Generate auto-slide controls if needed
         if (numberOfSlides > 1 && this.config.autoSlide && this.config.autoSlideStoppable) {
-            this.autoSlidePlayer = new Playback(this.dom.wrapper, function() {
+            this.autoSlidePlayer = new Playback(this.dom.wrapper, function () {
                 return Math.min(Math.max((Date.now() - this.autoSlideStartTime) / this.autoSlideDuration, 0), 1);
             }.bind(this));
             this.autoSlidePlayer.on('click', onAutoSlidePlayerClick);
@@ -351,12 +490,23 @@ class Deck {
     }
 
     onPageVisibilityChange(event) {
-        if (document.hidden === false && document.activeElement !== document.body) { // If, after clicking a link or similar and we're coming back, focus the document.body to ensure we can use keyboard shortcuts
-            if (typeof document.activeElement.blur === 'function') { // Not all elements support .blur() - SVGs among them.
+        if (this.wsConnected) {
+            this.wsConn.send(
+                JSON.stringify({
+                    com: ClientStatsCommand,
+                    c: this.connectionNumber,
+                    s: document.visibilityState === 'hidden' ? 2 : 1,
+                })
+            );
+        }
+        if (document.hidden === false && document.activeElement !== document.body) {
+            // If, after clicking a link or similar and we're coming back, focus the document.body to ensure we can use keyboard shortcuts
+            if (typeof document.activeElement.blur === 'function') {
+                // Not all elements support .blur() - SVGs among them.
                 document.activeElement.blur();
             }
             document.body.focus();
-        };
+        }
     }
 
     addEventListeners() {
@@ -411,30 +561,15 @@ class Deck {
         }
     }
 
-    dispatchEvent({ target = this.dom.wrapper, type, data, bubbles = true }) {
+    dispatchEvent({target = this.dom.wrapper, type, data, bubbles = true}) {
         let event = document.createEvent('HTMLEvents', 1, 2);
         event.initEvent(type, bubbles, true);
         extend(event, data);
         target.dispatchEvent(event);
-        if (target === this.dom.wrapper) {
-            this.dispatchPostMessage(type); // If we're in an iframe, post each reveal.js event to the parent window. Used by the notes plugin
-        }
-    }
-
-    dispatchPostMessage(type, data) {
-        if (this.config.postMessageEvents && window.parent !== window.self) {
-            let message = {
-                namespace: 'deck',
-                eventName: type,
-                state: this.getState()
-            };
-            extend(message, data);
-            window.parent.postMessage(JSON.stringify(message), '*');
-        }
     }
 
     enablePreviewLinks(selector = 'a') {
-        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(function(el) {
+        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(function (el) {
             if (/^(http|www)/gi.test(el.getAttribute('href'))) {
                 el.addEventListener('click', this.onPreviewLinkClicked, false);
             }
@@ -442,7 +577,7 @@ class Deck {
     }
 
     disablePreviewLinks(selector = 'a') {
-        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(function(el) {
+        Array.from(this.dom.wrapper.querySelectorAll(selector)).forEach(function (el) {
             if (/^(http|www)/gi.test(el.getAttribute('href'))) {
                 el.removeEventListener('click', this.onPreviewLinkClicked, false);
             }
@@ -467,10 +602,10 @@ class Deck {
 					<span class="x-frame-error">Unable to load iframe. This is likely due to the site's policy (x-frame-options).</span>
 				</small>
 			</div>`;
-        this.dom.overlay.querySelector('iframe').addEventListener('load', function(event) {
+        this.dom.overlay.querySelector('iframe').addEventListener('load', function (event) {
             this.dom.overlay.classList.add('loaded');
         }.bind(this), false);
-        this.dom.overlay.querySelector('.close').addEventListener('click', function(event) {
+        this.dom.overlay.querySelector('.close').addEventListener('click', function (event) {
             this.closeOverlay();
             event.preventDefault();
         }.bind(this), false);
@@ -497,7 +632,7 @@ class Deck {
         this.dom.overlay = document.createElement('div');
         this.dom.overlay.classList.add('overlay');
         this.dom.overlay.classList.add('overlay-help');
-        this.dom.wrapper.appendChild(dom.overlay);
+        this.dom.wrapper.appendChild(this.dom.overlay);
         let html = '<p class="title">Keyboard Shortcuts</p><br/>';
         let shortcuts = this.keyboard.getShortcuts(),
             bindings = this.keyboard.getBindings();
@@ -527,7 +662,7 @@ class Deck {
 
     closeOverlay() {
         if (this.dom.overlay) {
-            this.dom.overlay.parentNode.removeChild(dom.overlay);
+            this.dom.overlay.parentNode.removeChild(this.dom.overlay);
             this.dom.overlay = null;
             return true;
         }
@@ -536,9 +671,6 @@ class Deck {
 
     layout() {
         if (!this.dom.wrapper) {
-            return;
-        }
-        if (this.print.isPrintingPDF()) {
             return;
         }
 
@@ -564,7 +696,7 @@ class Deck {
                 this.dom.slides.style.top = '';
                 this.dom.slides.style.bottom = '';
                 this.dom.slides.style.right = '';
-                this.transformSlides({ layout: '' });
+                this.transformSlides({layout: ''});
             } else {
                 if (this.scale > 1 && supportsZoom && window.devicePixelRatio < 2) {
                     this.dom.slides.style.zoom = this.scale;
@@ -572,18 +704,18 @@ class Deck {
                     this.dom.slides.style.top = '';
                     this.dom.slides.style.bottom = '';
                     this.dom.slides.style.right = '';
-                    this.transformSlides({ layout: '' });
+                    this.transformSlides({layout: ''});
                 } else {
                     this.dom.slides.style.zoom = '';
                     this.dom.slides.style.left = '50%';
                     this.dom.slides.style.top = '50%';
                     this.dom.slides.style.bottom = 'auto';
                     this.dom.slides.style.right = 'auto';
-                    this.transformSlides({ layout: 'translate(-50%, -50%) scale(' + this.scale + ')' });
+                    this.transformSlides({layout: 'translate(-50%, -50%) scale(' + this.scale + ')'});
                 }
             }
             const slides = Array.from(this.dom.wrapper.querySelectorAll(SLIDES_SELECTOR)); // Select all slides, vertical and horizontal
-            slides.forEach(function(slide) {
+            slides.forEach(function (slide) {
                 if (slide.style.display === 'none') { // Don't bother updating invisible slides
                     return;
                 }
@@ -618,7 +750,7 @@ class Deck {
     getRemainingHeight(element, height = 0) {
         if (element) {
             let newHeight, oldHeight = element.style.height;
-            element.style.height = '0px'; // Change the .stretch element height to 0 in order find the height of all the other elements        
+            element.style.height = '0px'; // Change the .stretch element height to 0 in order find the height of all the other elements
             element.parentNode.style.height = 'auto'; // In Overview mode, the parent (.slide) height is set of 700px. Restore it temporarily to its natural height.
             newHeight = height - element.parentNode.offsetHeight;
             element.style.height = oldHeight + 'px'; // Restore the old height, just in case
@@ -629,7 +761,7 @@ class Deck {
     }
 
     layoutSlideContents(width, height) {
-        queryAll(this.dom.slides, 'section > .stretch, section > .r-stretch').forEach(function(el) { // Handle sizing of elements with the 'r-stretch' class
+        queryAll(this.dom.slides, 'section > .stretch, section > .r-stretch').forEach(function (el) { // Handle sizing of elements with the 'r-stretch' class
             let remainingHeight = this.getRemainingHeight(el, height); // Determine how much vertical space we can use
             if (/(img|video)/gi.test(el.nodeName)) { // Consider the aspect ratio of media elements
                 const nw = el.naturalWidth || el.videoWidth,
@@ -694,7 +826,7 @@ class Deck {
 
     isLastSlide() {
         if (this.currentSlide) {
-            if (this.currentSlide.nextElementSibling) return false; // Does this slide have a next sibling?            
+            if (this.currentSlide.nextElementSibling) return false; // Does this slide have a next sibling?
             if (this.isVerticalSlide(this.currentSlide) && this.currentSlide.parentNode.nextElementSibling) return false; // If it's vertical, does its parent have a next sibling?
             return true;
         }
@@ -709,7 +841,7 @@ class Deck {
         this.cancelAutoSlide();
         this.dom.wrapper.classList.add('paused');
         if (wasPaused === false) {
-            this.dispatchEvent({ type: 'paused' });
+            this.dispatchEvent({type: 'paused'});
         }
     }
 
@@ -718,7 +850,7 @@ class Deck {
         this.dom.wrapper.classList.remove('paused');
         this.cueAutoSlide();
         if (wasPaused) {
-            this.dispatchEvent({ type: 'resumed' });
+            this.dispatchEvent({type: 'resumed'});
         }
     }
 
@@ -746,30 +878,45 @@ class Deck {
         return !!(this.autoSlideDuration && !this.autoSlidePaused);
     }
 
-    slide(hIdx, vIdx, fragment, origin) {
+    slide(callerName, hIdx, vIdx, fragment, origin) {
         this.previousSlide = this.currentSlide; // Remember where we were at before
+
         const horizontalSlides = this.dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR); // Query all horizontal slides in the deck
+
         if (horizontalSlides.length === 0) return; // Abort if there are no slides
+
         if (vIdx === undefined && !this.overview.isActive()) { // If no vertical index is specified and the upcoming slide is a stack, resume at its previous vertical index
             vIdx = this.getPreviousVerticalIndex(horizontalSlides[hIdx]);
         }
+
         // If we were on a vertical stack, remember what vertical index
         // it was on so we can resume at the same position when returning
         if (this.previousSlide && this.previousSlide.parentNode && this.previousSlide.parentNode.classList.contains('stack')) {
             this.setPreviousVerticalIndex(this.previousSlide.parentNode, this.indexv);
         }
+
         const stateBefore = this.state.concat(); // Remember the state before this slide
+
         this.state.length = 0; // Reset the state array
+
         let indexhBefore = this.indexh || 0,
             indexvBefore = this.indexv || 0;
+
         this.indexh = this.updateSlides(HORIZONTAL_SLIDES_SELECTOR, hIdx === undefined ? this.indexh : hIdx); // Activate and transition to the new slide
+
         this.indexv = this.updateSlides(VERTICAL_SLIDES_SELECTOR, vIdx === undefined ? this.indexv : vIdx);
+
         let slideChanged = (this.indexh !== indexhBefore || this.indexv !== indexvBefore); // Dispatch an event if the slide changed
+
         if (!slideChanged) this.previousSlide = null; // Ensure that the previous slide is never the same as the current
+
         let currentHorizontalSlide = horizontalSlides[this.indexh], // Find the current horizontal slide and any possible vertical slides  within it
             currentVerticalSlides = currentHorizontalSlide.querySelectorAll('section');
+
         this.currentSlide = currentVerticalSlides[this.indexv] || currentHorizontalSlide; // Store references to the previous and current slides
+
         let autoAnimateTransition = false;
+
         if (slideChanged && this.previousSlide && this.currentSlide && !this.overview.isActive()) { // Detect if we're moving between two auto-animated slides
             if (this.previousSlide.hasAttribute('data-auto-animate') && this.currentSlide.hasAttribute('data-auto-animate')) { // If this is an auto-animated transition, we disable the regular slide transition
                 autoAnimateTransition = true;
@@ -779,28 +926,34 @@ class Deck {
         }
 
         this.updateSlidesVisibility(); // Update the visibility of slides now that the indices have changed
+
         this.layout();
+
         if (this.overview.isActive()) { // Update the overview if it's currently active
             this.overview.update();
         }
+
         if (typeof fragment !== 'undefined') { // Show fragment, if specified
             this.fragments.goto(fragment);
         }
+
         if (this.previousSlide && this.previousSlide !== this.currentSlide) { // Solves an edge case where the previous slide maintains the 'present' class when navigating between adjacent vertical stacks
             this.previousSlide.classList.remove('present');
             this.previousSlide.setAttribute('aria-hidden', 'true');
 
-            if (this.isFirstSlide()) { // Reset all slides upon navigate to home                    
-                setTimeout(function() { // Launch async task
-                    this.getVerticalStacks().forEach(function(slide) {
+            if (this.isFirstSlide()) { // Reset all slides upon navigate to home
+                setTimeout(function () { // Launch async task
+                    this.getVerticalStacks().forEach(function (slide) {
                         this.setPreviousVerticalIndex(slide, 0);
                     }, this);
                 }.bind(this), 0);
             }
         }
+
         const dom = this.dom,
             state = this.state,
             dispatchEvent = this.dispatchEvent;
+
         stateLoop:
             for (let i = 0, len = state.length; i < len; i++) { // Apply the new state
                 for (let j = 0; j < stateBefore.length; j++) { // Check if this state existed on the previous slide. If it did, we will avoid adding it repeatedly
@@ -810,11 +963,13 @@ class Deck {
                     }
                 }
                 dom.viewport.classList.add(state[i]);
-                dispatchEvent({ type: state[i] }); // Dispatch custom event matching the state's name
+                dispatchEvent({type: state[i]}); // Dispatch custom event matching the state's name
             }
+
         while (stateBefore.length) { // Clean up the remains of the previous state
             dom.viewport.classList.remove(stateBefore.pop());
         }
+
         if (slideChanged) {
             this.dispatchEvent({
                 type: 'slidechanged',
@@ -823,17 +978,33 @@ class Deck {
                     indexv: this.indexv,
                     previousSlide: this.previousSlide,
                     currentSlide: this.currentSlide,
-                    origin: origin
+                    origin: origin,
+                    callerName: callerName,
                 }
             });
         }
+
         if (slideChanged || !this.previousSlide) { // Handle embedded content
             this.slideContent.stopEmbeddedContent(this.previousSlide);
             this.slideContent.startEmbeddedContent(this.currentSlide);
         }
+
         this.announceStatus(this.getStatusText(this.currentSlide)); // Announce the current slide contents to screen readers
-        this.dispatchEvent({ type: 'slided' });
+
+        this.dispatchEvent({
+            type: 'slided',
+            data: {
+                indexh: this.indexh,
+                indexv: this.indexv,
+                previousSlide: this.previousSlide,
+                currentSlide: this.currentSlide,
+                origin: origin,
+                callerName: callerName,
+            }
+        });
+
         this.cueAutoSlide();
+
         if (autoAnimateTransition) { // Auto-animation
             setTimeout(() => {
                 dom.slides.classList.remove('disable-slide-transitions');
@@ -850,10 +1021,10 @@ class Deck {
         this.layout(); // Force a layout to make sure the current config is accounted for
         this.autoSlideDuration = this.config.autoSlide; // Reflect the current autoSlide value
         this.cueAutoSlide(); // Start auto-sliding if it's enabled
-        this.dispatchEvent({ type: 'synced' });
+        this.dispatchEvent({type: 'synced'});
         this.updateSlidesVisibility();
         if (this.config.autoPlayMedia === false) { // Start or stop embedded content depending on global config
-            this.slideContent.stopEmbeddedContent(this.currentSlide, { unloadIframes: false });
+            this.slideContent.stopEmbeddedContent(this.currentSlide, {unloadIframes: false});
         } else {
             this.slideContent.startEmbeddedContent(this.currentSlide);
         }
@@ -863,12 +1034,12 @@ class Deck {
     }
 
     syncSlide(slide = this.currentSlide) {
-        this.dispatchEvent({ type: 'syncSlide', data: slide });
+        this.dispatchEvent({type: 'syncSlide', data: slide});
     }
 
     resetVerticalSlides() {
-        this.getHorizontalSlides().forEach(function(horizontalSlide) {
-            queryAll(horizontalSlide, 'section').forEach(function(verticalSlide, y) {
+        this.getHorizontalSlides().forEach(function (horizontalSlide) {
+            queryAll(horizontalSlide, 'section').forEach(function (verticalSlide, y) {
                 if (y > 0) {
                     verticalSlide.classList.remove('present');
                     verticalSlide.classList.remove('past');
@@ -880,7 +1051,7 @@ class Deck {
     }
 
     shuffle(slides = this.getHorizontalSlides()) {
-        slides.forEach(function(slide) {
+        slides.forEach(function (slide) {
             let beforeSlide = slides[Math.floor(Math.random() * slides.length)]; // Insert the slide next to a randomly picked sibling slide slide. This may cause the slide to insert before itself, but that's not an issue.
             if (beforeSlide.parentNode === slide.parentNode) {
                 slide.parentNode.insetBefore(slide, beforeSlide);
@@ -895,7 +1066,6 @@ class Deck {
     updateSlides(selector, index) {
         let slides = queryAll(this.dom.wrapper, selector), // Select all slides and convert the NodeList result to an array
             slidesLength = slides.length;
-        let printMode = this.print.isPrintingPDF();
         if (slidesLength) {
             if (this.config.loop) { // Should the index loop?
                 index %= slidesLength;
@@ -904,8 +1074,8 @@ class Deck {
                 }
             }
             index = Math.max(Math.min(index, slidesLength - 1), 0); // Enforce max and minimum index bounds
-            slides.forEach(function(slide, i) {
-                let reverse = this.config.rtl && !this.isVerticalSlide(slide);
+            slides.forEach(function (slide, i) {
+                let reverse = false && !this.isVerticalSlide(slide);
                 slide.classList.remove('past'); // Avoid .remove() with multiple args for IE11 support
                 slide.classList.remove('present');
                 slide.classList.remove('future');
@@ -914,15 +1084,11 @@ class Deck {
                 if (slide.querySelector('section')) { // If this element contains vertical slides
                     slide.classList.add('stack');
                 }
-                if (printMode) { // If we're printing static slides, all slides are "present"
-                    slide.classList.add('present');
-                    return;
-                }
+
                 if (i < index) {
                     slide.classList.add(reverse ? 'future' : 'past'); // Any element previous to index is given the 'past' class
                     if (this.config.fragments) {
-
-                        queryAll(slide, '.fragment').forEach(function(fragment) { // Show all fragments in prior slides
+                        queryAll(slide, '.fragment').forEach(function (fragment) { // Show all fragments in prior slides
                             fragment.classList.add('visible');
                             fragment.classList.remove('current-fragment');
                         });
@@ -930,7 +1096,7 @@ class Deck {
                 } else if (i > index) {
                     slide.classList.add(reverse ? 'past' : 'future'); // Any element subsequent to index is given the 'future' class
                     if (this.config.fragments) {
-                        queryAll(slide, '.fragment.visible').forEach(function(fragment) { // Hide all fragments in future slides
+                        queryAll(slide, '.fragment.visible').forEach(function (fragment) { // Hide all fragments in future slides
                             fragment.classList.remove('visible', 'current-fragment');
                         });
                     }
@@ -970,10 +1136,7 @@ class Deck {
             if (isMobile) { // Shorten the view distance on devices that typically have less resources
                 viewDistance = this.overview.isActive() ? 6 : this.config.mobileViewDistance;
             }
-            if (this.print.isPrintingPDF()) { // All slides need to be visible when exporting to PDF
-                viewDistance = Number.MAX_VALUE;
-            }
-            horizontalSlides.forEach(function(slide, i) {
+            horizontalSlides.forEach(function (slide, i) {
                 let verticalSlides = queryAll(slide, 'section'),
                     verticalSlidesLength = verticalSlides.length;
 
@@ -988,7 +1151,7 @@ class Deck {
                 }
                 if (verticalSlidesLength) {
                     let oy = this.getPreviousVerticalIndex(slide);
-                    verticalSlides.forEach(function(vSlide, j) {
+                    verticalSlides.forEach(function (vSlide, j) {
                         distanceY = i === (this.indexh || 0) ? Math.abs((this.indexv || 0) - j) : Math.abs(j - oy);
                         if (distanceX + distanceY < viewDistance) {
                             this.slideContent.load(vSlide);
@@ -1011,7 +1174,7 @@ class Deck {
         }
     }
 
-    availableRoutes({ includeFragments = false } = {}) {
+    availableRoutes({includeFragments = false} = {}) {
         let horizontalSlides = this.dom.wrapper.querySelectorAll(HORIZONTAL_SLIDES_SELECTOR),
             verticalSlides = this.dom.wrapper.querySelectorAll(VERTICAL_SLIDES_SELECTOR);
         let routes = {
@@ -1040,11 +1203,6 @@ class Deck {
             routes.up = routes.up || fragmentRoutes.prev;
             routes.down = routes.down || fragmentRoutes.next;
             routes.right = routes.right || fragmentRoutes.next;
-        }
-        if (this.config.rtl) { // Reverse horizontal controls for rtl
-            let left = routes.left;
-            routes.left = routes.right;
-            routes.right = left;
         }
         return routes;
     }
@@ -1095,9 +1253,9 @@ class Deck {
         if (slide) { // If a slide is specified, return the indices of that slide
             let isVertical = this.isVerticalSlide(slide);
             let slideh = isVertical ? slide.parentNode : slide;
-            let horizontalSlides = this.getHorizontalSlides(); // Select all horizontal slides            
+            let horizontalSlides = this.getHorizontalSlides(); // Select all horizontal slides
             h = Math.max(horizontalSlides.indexOf(slideh), 0); // Now that we know which the horizontal slide is, get its index
-            v = undefined; // Assume we're not vertical           
+            v = undefined; // Assume we're not vertical
             if (isVertical) { // If this is a vertical slide, grab the vertical index
                 v = Math.max(queryAll(slide.parentNode, 'section').indexOf(slide), 0);
             }
@@ -1112,7 +1270,7 @@ class Deck {
                 }
             }
         }
-        return { h, v, f };
+        return {h, v, f};
     }
 
     getSlides() {
@@ -1140,7 +1298,7 @@ class Deck {
     }
 
     getSlidesAttributes() {
-        return this.getSlides().map(function(slide) {
+        return this.getSlides().map(function (slide) {
             let attributes = {};
             for (let i = 0; i < slide.attributes.length; i++) {
                 let attribute = slide.attributes[i];
@@ -1182,53 +1340,22 @@ class Deck {
         };
     }
 
-    onPostMessage(event) {
-        let data = event.data;
-        if (typeof data === 'string' && data.charAt(0) === '{' && data.charAt(data.length - 1) === '}') { // Make sure we're dealing with JSON
-            data = JSON.parse(data);
-            if (!data.methodName) {
-                return;
-            }
-            if (typeof this[data.methodName] === 'function') { // Check if the requested method can be found
-                if (POST_MESSAGE_METHOD_BLACKLIST.test(data.methodName) === false) {
-                    let result;
-                    if (data.args !== undefined) {
-                        if (Array.isArray(data.args)) {
-                            result = this[data.methodName](data.args[0]);
-                        } else {
-                            result = this[data.methodName](data.args);
-                        }
-                    } else {
-                        result = this[data.methodName]();
-                    }
-                    this.dispatchPostMessage('callback', { methodName: data.methodName, result: result }); // Dispatch a postMessage event with the returned value from our method invocation for getter functions
-                } else {
-                    console.warn(`${data.methodName} is is blacklisted from the postMessage API`);
-                }
-            } else {
-                console.error(`method ${data.methodName} does not exist or it's not a function!`);
-            }
-        }
-    }
-
-    setupPostMessage() {
-        if (this.config.postMessage) {
-            window.addEventListener('message', this.onPostMessage, false);
-        }
-    }
-
     setState(state) {
         if (typeof state !== 'object') {
             console.warn(`passed state is not an object`, state);
             return;
         }
-        this.slide(deserialize(state.indexh), deserialize(state.indexv), deserialize(state.indexf));
+
+        this.slide('state', deserialize(state.indexh), deserialize(state.indexv), deserialize(state.indexf));
+
         let pausedFlag = deserialize(state.paused),
             overviewFlag = deserialize(state.overview);
+
         if (typeof pausedFlag === 'boolean' && pausedFlag !== this.isPaused()) {
             this.togglePause(pausedFlag);
         }
-        if (typeof overviewFlag === 'boolean' && overviewFlag !== overview.isActive()) {
+
+        if (typeof overviewFlag === 'boolean' && overviewFlag !== this.overview.isActive()) {
             this.overview.toggle(overviewFlag);
         }
     }
@@ -1250,7 +1377,7 @@ class Deck {
             } else {
                 this.autoSlideDuration = this.config.autoSlide;
                 if (this.currentSlide.querySelectorAll('.fragment').length === 0) { // If there are media elements with data-autoplay, automatically set the autoSlide duration to the length of that media. Not applicable if the slide is divided up into fragments. playbackRate is accounted for in the duration.
-                    queryAll(this.currentSlide, 'video, audio').forEach(function(el) {
+                    queryAll(this.currentSlide, 'video, audio').forEach(function (el) {
                         if (el.hasAttribute('data-autoplay')) {
                             if (this.autoSlideDuration && (el.duration * 1000 / el.playbackRate) > this.autoSlideDuration) {
                                 this.autoSlideDuration = (el.duration * 1000 / el.playbackRate) + 1000;
@@ -1264,7 +1391,7 @@ class Deck {
                 !this.isPaused() &&
                 !this.overview.isActive() &&
                 (!this.isLastSlide() || this.fragments.availableRoutes().next || this.config.loop === true)) { // Cue the next auto-slide if: - There is an autoSlide value - Auto-sliding isn't paused by the user - The presentation isn't paused - The overview isn't active - The presentation isn't over
-                this.autoSlideTimeout = setTimeout(function() {
+                this.autoSlideTimeout = setTimeout(function () {
                     if (typeof config.autoSlideMethod === 'function') {
                         this.config.autoSlideMethod()
                     } else {
@@ -1288,7 +1415,7 @@ class Deck {
     pauseAutoSlide() {
         if (this.autoSlideDuration && !this.autoSlidePaused) {
             this.autoSlidePaused = true;
-            this.dispatchEvent({ type: 'autoslidepaused' });
+            this.dispatchEvent({type: 'autoslidepaused'});
             clearTimeout(this.autoSlideTimeout);
             if (this.autoSlidePlayer) {
                 this.autoSlidePlayer.setPlaying(false);
@@ -1299,62 +1426,48 @@ class Deck {
     resumeAutoSlide() {
         if (this.autoSlideDuration && this.autoSlidePaused) {
             this.autoSlidePaused = false;
-            this.dispatchEvent({ type: 'autoslideresumed' });
+            this.dispatchEvent({type: 'autoslideresumed'});
             this.cueAutoSlide();
         }
     }
 
     navigateLeft() {
         this.navigationHistory.hasNavigatedHorizontally = true;
-        if (this.config.rtl) { // Reverse for RTL
-            if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().left) {
-                this.slide(this.indexh + 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
-            }
-        } else if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().left) { // Normal navigation
-            this.slide(this.indexh - 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
+        if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().left) { // Normal navigation
+            this.slide('left', this.indexh - 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
         }
     }
 
     navigateRight() {
         this.navigationHistory.hasNavigatedHorizontally = true;
-        if (this.config.rtl) { // Reverse for RTL
-            if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().right) {
-                this.slide(this.indexh - 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
-            }
-        } else if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().right) { // Normal navigation
-            this.slide(this.indexh + 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
+        if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().right) { // Normal navigation
+            this.slide('right', this.indexh + 1, this.config.navigationMode === 'grid' ? this.indexv : undefined);
         }
     }
 
     navigateUp() {
         if ((this.overview.isActive() || this.fragments.prev() === false) && this.availableRoutes().up) { // Prioritize hiding fragments
-            this.slide(this.indexh, this.indexv - 1);
+            this.slide('up', this.indexh, this.indexv - 1);
         }
     }
 
     navigateDown() {
         this.navigationHistory.hasNavigatedVertically = true;
         if ((this.overview.isActive() || this.fragments.next() === false) && this.availableRoutes().down) { // Prioritize revealing fragments
-            this.slide(this.indexh, this.indexv + 1);
+            this.slide('down', this.indexh, this.indexv + 1);
         }
     }
 
     navigatePrev() {
-
         if (this.fragments.prev() === false) { // Prioritize revealing fragments
             if (this.availableRoutes().up) {
                 this.navigateUp();
             } else {
-                let previousSlide;
-                if (config.rtl) { // Fetch the previous horizontal slide, if there is one
-                    previousSlide = queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.future').pop();
-                } else {
-                    previousSlide = queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.past').pop();
-                }
+                let previousSlide = queryAll(this.dom.wrapper, HORIZONTAL_SLIDES_SELECTOR + '.past').pop();
                 if (previousSlide) {
                     let v = (previousSlide.querySelectorAll('section').length - 1) || undefined;
                     let h = this.indexh - 1;
-                    this.slide(h, v);
+                    this.slide('prev', h, v);
                 }
             }
         }
@@ -1370,8 +1483,6 @@ class Deck {
             }
             if (routes.down) {
                 this.navigateDown();
-            } else if (this.config.rtl) {
-                this.navigateLeft();
             } else {
                 this.navigateRight();
             }
@@ -1396,7 +1507,7 @@ class Deck {
 
     onAutoSlidePlayerClick(event) {
         if (this.isLastSlide() && this.config.loop === false) { // Replay
-            this.slide(0, 0);
+            this.slide('auto', 0, 0);
             this.resumeAutoSlide();
         } else if (this.autoSlidePaused) { // Resume
             this.resumeAutoSlide();
@@ -1410,4 +1521,4 @@ class Deck {
     }
 }
 
-export { Deck };
+export {Deck};

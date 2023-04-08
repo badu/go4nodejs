@@ -1,115 +1,50 @@
-(function() {
-    var notes,
+(function () {
+    let wsConnected = false,
+        wsConn,
         notesValue,
-        currentState,
+        totpInputCode,
+        wsConnectButton,
+        consoler,
         currentSlide,
         upcomingSlide,
         layoutLabel,
         layoutDropdown,
-        pendingCalls = {},
-        lastAPICallID = 0,
-        connected = false,
+        wsClientNo,
         SPEAKER_LAYOUTS = {
             'default': 'Default',
             'wide': 'Wide',
             'tall': 'Tall',
             'notes-only': 'Notes only'
         },
-        connectionStatus = document.querySelector('#connection-status'),
-        connectionTimeout = setTimeout(function() {
-            connectionStatus.innerHTML = 'Error connecting to main window.<br>Please try closing and reopening the speaker view.';
-        }, 5000);
+        useConsoler = false,
+        allClients = new Set(),
+        activeClients = new Set(),
+        inactiveClients = new Set();
 
-    setupLayout();
 
-    window.addEventListener('message', function(event) {
-        clearTimeout(connectionTimeout);
-        connectionStatus.style.display = 'none';
-        var data = JSON.parse(event.data);
-        if (!data) {
-            return;
+    if (useConsoler) {
+        consoler = document.getElementById('consoler');
+        consoler.addEventListener('dblclick', function () {
+            consoler.value = '\n';
+        })
+        consoler.value = '\n';
+    } else {
+        const debuggerElem = document.getElementById('debugger');
+        debuggerElem.parentNode.removeChild(debuggerElem);
+    }
+
+    function trace(message) {
+        if (!useConsoler) {
+            return
         }
-        if (data.state) delete data.state.overview; // The overview mode is only useful to the instance where navigation occurs so we don't sync it  
-        switch (data.namespace) {
-            case 'speaker-notes': // Messages sent by the notes plugin inside of the main window
-                switch (data.type) {
-                    case 'connect':
-                        handleConnectMessage(data);
-                        break;
-                    case 'state':
-                        handleStateMessage(data);
-                        break;
-                    case 'return':
-                        if (pendingCalls) {
-                            pendingCalls[data.callId](data.result);
-                            delete pendingCalls[data.callId];
-                        }
-                        break;
-                }
-                break;
-            case 'deck': // Messages sent by the inside of the current slide preview
-                if (/ready/.test(data.eventName)) {
-                    window.opener.postMessage(JSON.stringify({ namespace: 'speaker-notes', type: 'connected' }), '*'); // Send a message back to notify that the handshake is complete
-                } else if (/slidechanged|fragmentshown|fragmenthidden|paused|resumed/.test(data.eventName) && currentState !== JSON.stringify(data.state)) {
-                    window.opener.postMessage(JSON.stringify({ methodName: 'setState', args: [data.state] }), '*');
-                }
-                break;
-        }
-    });
+        consoler.value = message + '\n' + consoler.value;
+    }
 
     function callAPI(method, args, callback) {
-        var callId = ++lastAPICallID;
-        pendingCalls[callId] = callback;
-        window.opener.postMessage(JSON.stringify({
-            namespace: 'speaker-notes',
-            type: 'call',
-            callId: callId,
-            methodName: method,
-            arguments: args
-        }), '*');
+        callback(deck[method].apply(deck, args));
     }
 
-    function handleConnectMessage(data) {
-        if (connected === false) {
-            connected = true;
-            setupIframes(data);
-            setupKeyboard();
-            setupNotes();
-            setupTimer();
-        }
-    }
-
-    function handleStateMessage(data) {
-        currentState = JSON.stringify(data.state); // Store the most recently set state to avoid circular loops applying the same state
-        if (data.notes) { // No need for updating the notes in case of fragment changes
-            notes.classList.remove('hidden');
-            notesValue.style.whiteSpace = data.whitespace;
-            if (data.markdown) {
-                notesValue.innerHTML = marked(data.notes);
-            } else {
-                notesValue.innerHTML = data.notes;
-            }
-        } else {
-            notes.classList.add('hidden');
-        }
-        currentSlide.contentWindow.postMessage(JSON.stringify({ methodName: 'setState', args: [data.state] }), '*'); // Update the note slides
-        upcomingSlide.contentWindow.postMessage(JSON.stringify({ methodName: 'setState', args: [data.state] }), '*');
-        upcomingSlide.contentWindow.postMessage(JSON.stringify({ methodName: 'navigateNext' }), '*');
-    }
-
-    handleStateMessage = debounce(handleStateMessage, 200); // Limit to max one state update per X ms
-
-    function setupKeyboard() {
-        document.addEventListener('keydown', function(event) {
-            if (event.keyCode === 116 || (event.metaKey && event.keyCode === 82)) { /* F8 and r */
-                event.preventDefault();
-                return false;
-            }
-            currentSlide.contentWindow.postMessage(JSON.stringify({ methodName: 'triggerKey', args: [event.keyCode] }), '*');
-        });
-    }
-
-    function setupIframes(data) {
+    function setupIframes() {
         var params = [
             'receiver',
             'progress=false',
@@ -118,15 +53,20 @@
             'autoSlide=0',
             'backgroundTransition=none'
         ].join('&');
-        var urlSeparator = data.url.includes("?") ? '&' : '?';
-        var hash = '#/' + data.state.indexh + '/' + data.state.indexv;
-        var currentURL = data.url + urlSeparator + params + '&postMessageEvents=true' + hash;
-        var upcomingURL = data.url + urlSeparator + params + '&controls=false' + hash;
+
+        var url = window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search;
+        var state = deck.getState();
+        var urlSeparator = url.includes("?") ? '&' : '?';
+        var hash = '#/' + state.indexh + '/' + state.indexv;
+        var currentURL = url + urlSeparator + params + hash;
+        var upcomingURL = url + urlSeparator + params + '&controls=false' + hash;
+
         currentSlide = document.createElement('iframe');
         currentSlide.setAttribute('width', 1280);
         currentSlide.setAttribute('height', 1024);
         currentSlide.setAttribute('src', currentURL);
         document.querySelector('#current-slide').appendChild(currentSlide);
+
         upcomingSlide = document.createElement('iframe');
         upcomingSlide.setAttribute('width', 640);
         upcomingSlide.setAttribute('height', 512);
@@ -134,14 +74,9 @@
         document.querySelector('#upcoming-slide').appendChild(upcomingSlide);
     }
 
-    function setupNotes() {
-        notes = document.querySelector('.speaker-controls-notes');
-        notesValue = document.querySelector('.speaker-controls-notes .value');
-    }
-
     function getTimings(callback) {
-        callAPI('getSlidesAttributes', [], function(slideAttributes) {
-            callAPI('getConfig', [], function(config) {
+        callAPI('getSlidesAttributes', [], function (slideAttributes) {
+            callAPI('getConfig', [], function (config) {
                 var totalTime = config.totalTime;
                 var minTimePerSlide = config.minimumTimePerSlide || 0;
                 var defaultTiming = config.defaultTiming;
@@ -160,20 +95,28 @@
                         var t = slide['data-timing'];
                         timing = parseInt(t);
                         if (isNaN(timing)) {
-                            console.warn("Could not parse timing '" + t + "' of slide " + i + "; using default of " + defaultTiming);
+                            trace("Could not parse timing '" + t + "' of slide " + i + "; using default of " + defaultTiming);
                             timing = defaultTiming;
                         }
                     }
                     timings.push(timing);
                 }
                 if (totalTime) {
-                    var remainingTime = totalTime - timings.reduce(function(a, b) { return a + b; }, 0); // After we've allocated time to individual slides, we summarize it and subtract it from the total time
-                    var remainingSlides = (timings.filter(function(x) { return x == 0 })).length // The remaining time is divided by the number of slides that have 0 seconds allocated at the moment, giving the average time-per-slide on the remaining slides
+                    var remainingTime = totalTime - timings.reduce(function (a, b) {
+                        return a + b;
+                    }, 0); // After we've allocated time to individual slides, we summarize it and subtract it from the total time
+                    var remainingSlides = (timings.filter(function (x) {
+                        return x == 0
+                    })).length // The remaining time is divided by the number of slides that have 0 seconds allocated at the moment, giving the average time-per-slide on the remaining slides
                     var timePerSlide = Math.round(remainingTime / remainingSlides, 0)
-                        // And now we replace every zero-value timing with that average
-                    timings = timings.map(function(x) { return (x == 0 ? timePerSlide : x) });
+                    // And now we replace every zero-value timing with that average
+                    timings = timings.map(function (x) {
+                        return (x == 0 ? timePerSlide : x)
+                    });
                 }
-                var slidesUnderMinimum = timings.filter(function(x) { return (x < minTimePerSlide) }).length
+                var slidesUnderMinimum = timings.filter(function (x) {
+                    return (x < minTimePerSlide)
+                }).length
                 if (slidesUnderMinimum) {
                     message = "The pacing time for " + slidesUnderMinimum + " slide(s) is under the configured minimum of " + minTimePerSlide + " seconds. Check the data-timing attribute on individual slides, or consider increasing the totalTime or minimumTimePerSlide configuration options (or removing some slides).";
                     alert(message);
@@ -184,7 +127,7 @@
     }
 
     function getTimeAllocated(timings, callback) {
-        callAPI('getSlidePastCount', [], function(currentSlide) {
+        callAPI('getSlidePastCount', [], function (currentSlide) {
             var allocated = 0;
             for (var i in timings.slice(0, currentSlide + 1)) {
                 allocated += timings[i];
@@ -206,13 +149,13 @@
             pacingMinutesEl = pacingEl.querySelector('.minutes-value'),
             pacingSecondsEl = pacingEl.querySelector('.seconds-value');
         var timings = null;
-        getTimings(function(_timings) {
+        getTimings(function (_timings) {
             timings = _timings;
             if (_timings !== null) {
                 pacingTitleEl.style.removeProperty('display');
                 pacingEl.style.removeProperty('display');
             }
-            _updateTimer(); // Update once directly            
+            _updateTimer(); // Update once directly
             setInterval(_updateTimer, 1000); // Then update every second
         });
 
@@ -221,9 +164,9 @@
                 start = new Date();
                 _updateTimer();
             } else {
-                getTimeAllocated(timings, function(slideEndTimingSeconds) { // Reset timer to beginning of current slide
+                getTimeAllocated(timings, function (slideEndTimingSeconds) { // Reset timer to beginning of current slide
                     var slideEndTiming = slideEndTimingSeconds * 1000;
-                    callAPI('getSlidePastCount', [], function(currentSlide) {
+                    callAPI('getSlidePastCount', [], function (currentSlide) {
                         var currentSlideTiming = timings[currentSlide] * 1000;
                         var previousSlidesTiming = slideEndTiming - currentSlideTiming;
                         var now = new Date();
@@ -234,7 +177,7 @@
             }
         }
 
-        timeEl.addEventListener('click', function() {
+        timeEl.addEventListener('click', function () {
             _resetTimer();
             return false;
         });
@@ -264,7 +207,7 @@
             var diff,
                 now = new Date();
             diff = now.getTime() - start.getTime();
-            clockEl.innerHTML = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+            clockEl.innerHTML = now.toLocaleTimeString('en-US', {hour12: true, hour: '2-digit', minute: '2-digit'});
             _displayTime(hoursEl, minutesEl, secondsEl, diff);
             if (timings !== null) {
                 _updatePacing(diff);
@@ -272,9 +215,9 @@
         }
 
         function _updatePacing(diff) {
-            getTimeAllocated(timings, function(slideEndTimingSeconds) {
+            getTimeAllocated(timings, function (slideEndTimingSeconds) {
                 var slideEndTiming = slideEndTimingSeconds * 1000;
-                callAPI('getSlidePastCount', [], function(currentSlide) {
+                callAPI('getSlidePastCount', [], function (currentSlide) {
                     var currentSlideTiming = timings[currentSlide] * 1000;
                     var timeLeftCurrentSlide = slideEndTiming - diff;
                     if (timeLeftCurrentSlide < 0) {
@@ -299,7 +242,7 @@
             option.textContent = SPEAKER_LAYOUTS[id];
             layoutDropdown.appendChild(option);
         }
-        layoutDropdown.addEventListener('change', function(event) { // Monitor the dropdown for changes
+        layoutDropdown.addEventListener('change', function (event) { // Monitor the dropdown for changes
             setLayout(layoutDropdown.value);
         }, false);
         setLayout(getLayout()); // Restore any currently persisted layout
@@ -341,27 +284,283 @@
     function zeroPadInteger(num) {
         var str = '00' + parseInt(num);
         return str.substring(str.length - 2);
-
     }
 
-    function debounce(fn, ms) {
-        var lastTime = 0,
-            timeout;
+    function connectToWs(totpCode) {
+        wsConn = new WebSocket("ws://" + document.location.host + "/ws?totp=" + totpCode);
 
-        return function() {
-            var args = arguments;
-            var context = this;
-            clearTimeout(timeout);
-            var timeSinceLastCall = Date.now() - lastTime;
-            if (timeSinceLastCall > ms) {
-                fn.apply(context, args);
-                lastTime = Date.now();
-            } else {
-                timeout = setTimeout(function() {
-                    fn.apply(context, args);
-                    lastTime = Date.now();
-                }, ms - timeSinceLastCall);
+        wsConn.onclose = function (e) {
+            trace('[speaker-ws] connection closed:' + JSON.stringify(e.reason));
+            wsConnectButton.innerText = 'Connect';
+            totpInputCode.style.visibility = 'visible';
+            wsConnected = false;
+        };
+
+        const lm = document.getElementById('last-message');
+
+        wsConn.onmessage = function (evt) {
+            try {
+                const decoded = JSON.parse(evt.data);
+                switch (decoded.com) {
+                    case StatusRequestCommand:
+                        lm.innerText = 'Client #' + decoded.c + ' REQ [STAT]\n' + lm.innerText;
+                        const message = {
+                            com: StatusReplyCommand,
+                            c: decoded.c,
+                            state: currentSlide.contentWindow.theDeck.getState()
+                        };
+                        wsConn.send(JSON.stringify(message));
+                        break;
+                    case ClientStatsCommand:
+                        switch (decoded.s) {
+                            case 1:
+                                inactiveClients.delete(decoded.c);
+                                activeClients.add(decoded.c);
+                                allClients.add(decoded.c);
+                                break;
+                            case 2:
+                                inactiveClients.add(decoded.c);
+                                activeClients.delete(decoded.c);
+                                allClients.add(decoded.c);
+                                break;
+                            case 3:
+                                inactiveClients.delete(decoded.c);
+                                activeClients.delete(decoded.c);
+                                allClients.delete(decoded.c);
+                                break;
+                            case 4:
+                                activeClients.add(decoded.c);
+                                allClients.add(decoded.c);
+                                break;
+                        }
+                        trace(`client status ${JSON.stringify(decoded)}`);
+                        break;
+                    case ConnectedReplyCommand:
+                        if (decoded.s === 5) {
+                            wsClientNo = decoded.c;
+                            // assuming they are all active, eagerly waiting for Mr Speaker to show up
+                            decoded.cn.forEach(function (value) {
+                                activeClients.add(value);
+                                allClients.add(value);
+                            })
+                            wsConn.send(JSON.stringify({
+                                com: HideControlsCommand,
+                                c: wsClientNo,
+                                state: currentSlide.contentWindow.theDeck.getState()
+                            }));
+                        } else {
+                            lm.innerText = 'Client #' + decoded.c + ' connected [why?]\n' + lm.innerText;
+                        }
+                        break;
+                    default:
+                        lm.innerText = `Unknown message typed ${decoded.com} from client #${decoded.c}` + '\n' + lm.innerText;
+                        trace(`message ${JSON.stringify(decoded)}`);
+                        break;
+                }
+
+                document.getElementById('total').innerText = `${allClients.size} Total`;
+                document.getElementById('focused').innerText = `${activeClients.size} Focused`;
+                document.getElementById('unfocused').innerText = `${inactiveClients.size} Out of focus`;
+
+            } catch (ex) {
+                lm.innerText = `[speaker-ws] failed to decode ${evt.data} due to ${ex}` + '\n' + lm.innerText;
+                trace(`[speaker-ws] failed to decode ${evt.data} due to ${ex}`);
+            }
+        };
+
+        wsConn.onopen = function (e) {
+            totpInputCode.style.visibility = 'hidden';
+            wsConnectButton.innerText = 'Disconnect';
+            wsConnected = true;
+        }
+
+        wsConn.onerror = function (e) {
+            trace('[speaker-ws] error:' + JSON.stringify(e));
+            wsConnected = false;
+        };
+    }
+
+    totpInputCode = document.getElementById('totpInputCode');
+    wsConnectButton = document.getElementById('wsConnectButton');
+
+    wsConnectButton.addEventListener('click', function () {
+        if (!wsConnected) {
+            connectToWs(totpInputCode.value);
+        } else {
+            wsConn.send(JSON.stringify({com: ShowControlsCommand, c: wsClientNo}));
+            setTimeout(function () {
+                wsConn.close(3000, 'Mr Speaker has left the building.');
+                wsConnected = false;
+                wsConnectButton.innerText = 'Connect';
+                totpInputCode.style.visibility = 'visible';
+            }, 500);
+        }
+    })
+
+    // for debugging
+    function fetchTOTPCode() {
+        fetch(window.location.protocol + '//' + window.location.host + "/code")
+            .then((response) => response.json())
+            .then((data) => {
+                trace("[speaker-ws] TOTP code:" + data.code + ". Connecting to WS!");
+                totpInputCode.value = data.code;
+            });
+    }
+
+    function setupKeyboard() {
+        document.addEventListener('keydown', function (event) {
+            if (event.keyCode === 116 || (event.metaKey && event.keyCode === 82)) { /* F8 and r */
+                event.preventDefault();
+                return false;
+            }
+        });
+    }
+
+    notesValue = document.querySelector('.speaker-controls-notes .value');
+
+    function setCurrentSlideNotes() {
+        let slideElement = currentSlide.contentWindow.theDeck.currentSlide,
+            notesElement = slideElement.querySelector('aside.notes'),
+            fragmentElement = slideElement.querySelector('.current-fragment'),
+            effectiveNotes = "",
+            hasMarkDown = false;
+
+        console.log(slideElement);
+        console.log(slideElement.querySelector('aside.notes'));
+
+        if (notesElement) { // Look for notes defined in an aside element
+            effectiveNotes = notesElement.innerHTML;
+            hasMarkDown = typeof notesElement.getAttribute('data-markdown') === 'string';
+        }
+
+        if (fragmentElement) { // Look for notes defined in a fragment
+            let fragmentNotes = fragmentElement.querySelector('aside.notes');
+            if (fragmentNotes) {
+                effectiveNotes = fragmentNotes.innerHTML;
+            } else if (fragmentElement.hasAttribute('data-notes')) {
+                effectiveNotes = fragmentElement.getAttribute('data-notes');
+                notesValue.style.whiteSpace = 'pre-wrap';
+                notesElement = null; // In case there are slide notes
             }
         }
+
+        if (slideElement.hasAttribute('data-notes')) { // Look for notes defined in a slide attribute
+            hasMarkDown = typeof slideElement.getAttribute('data-markdown') === 'string';
+            if (hasMarkDown) {
+                effectiveNotes = marked(slideElement.getAttribute('data-notes'));
+            } else {
+                effectiveNotes = slideElement.getAttribute('data-notes');
+            }
+        }
+
+        if (effectiveNotes !== "") {
+            notesValue.style.whiteSpace = 'pre-wrap';
+            notesValue.innerHTML = effectiveNotes;
+        } else {
+            notesValue.innerHTML = "no notes for this slide"
+        }
     }
+
+    setupIframes();
+
+    upcomingSlide.contentWindow.addEventListener('ready', function () {
+        upcomingSlide.contentWindow.theDeck.navigateNext();
+    });
+
+    currentSlide.contentWindow.addEventListener('ready', function () {
+
+        setCurrentSlideNotes();
+
+        currentSlide.contentWindow.theDeck.on('paused', function (e) {
+            const message = JSON.stringify({com: PausedCommand, c: wsClientNo})
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+        });
+
+        currentSlide.contentWindow.theDeck.on('resumed', function (e) {
+            const message = JSON.stringify({com: ResumedCommand, c: wsClientNo})
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+        });
+
+        currentSlide.contentWindow.theDeck.on('fragmentshown', function (event) {
+            setCurrentSlideNotes();
+            const message = JSON.stringify({
+                com: FragmentShownCommand,
+                c: wsClientNo,
+                state: currentSlide.contentWindow.theDeck.getState()
+            });
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+
+            upcomingSlide.contentWindow.theDeck.navigateNext();
+        });
+
+        currentSlide.contentWindow.theDeck.on('slided', function (event) {
+            setCurrentSlideNotes();
+            const message = JSON.stringify({
+                com: SlidedCommand,
+                c: wsClientNo,
+                state: currentSlide.contentWindow.theDeck.getState()
+            });
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+
+            let called = false
+            const callOnce = function () {
+                if (called) {
+                    return
+                }
+                called = true;
+                upcomingSlide.contentWindow.theDeck.navigateNext();
+                upcomingSlide.contentWindow.theDeck.removeEventListener('slided', callOnce, false);
+            }
+
+            upcomingSlide.contentWindow.theDeck.addEventListener('slided', callOnce, false);
+            upcomingSlide.contentWindow.theDeck.setState(currentSlide.contentWindow.theDeck.getState());
+        });
+
+        currentSlide.contentWindow.theDeck.on('overviewshown', function (e) {
+            const message = JSON.stringify({com: OverviewShownCommand, c: wsClientNo})
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+        });
+
+        currentSlide.contentWindow.theDeck.on('overviewhidden', function (e) {
+            const message = JSON.stringify({com: OverviewHiddenCommand, c: wsClientNo})
+            if (wsConnected) {
+                wsConn.send(message)
+            } else {
+                trace('error : we are NOT connected to WS.');
+            }
+        });
+    })
+
+    window.onbeforeunload = function () {
+        if (wsConnected) {
+            wsConn.send(JSON.stringify({com: ShowControlsCommand, c: wsClientNo}));
+        }
+    }
+
+    setupLayout();
+    setupKeyboard();
+    setupTimer();
+
+    fetchTOTPCode();
+
 })();

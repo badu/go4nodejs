@@ -1,4 +1,5 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class HighlightPlugin {
 
     constructor() {
@@ -21,7 +22,7 @@ class HighlightPlugin {
         var config = deck.config.highlight || {};
         config.highlightOnLoad = typeof config.highlightOnLoad === 'boolean' ? config.highlightOnLoad : true;
         config.escapeHTML = typeof config.escapeHTML === 'boolean' ? config.escapeHTML : true;
-        [].slice.call(deck.deckElement.querySelectorAll('pre code')).forEach(function(block) {
+        [].slice.call(deck.deckElement.querySelectorAll('pre code')).forEach(function (block) {
             // Code can optionally be wrapped in script template to avoid
             // HTML being parsed by the browser (i.e. when you need to
             // include <, > or & in your code).
@@ -39,19 +40,12 @@ class HighlightPlugin {
                 block.innerHTML = block.innerHTML.replace(/</g, "&lt;").replace(/>/g, '&gt;');
             }
             // Re-highlight when focus is lost (for contenteditable code)
-            block.addEventListener('focusout', function(event) {
+            block.addEventListener('focusout', function (event) {
                 this.hljs.highlightBlock(event.currentTarget);
             }, false);
             if (config.highlightOnLoad) {
                 this.highlightBlock(block);
             }
-        }, this);
-        // If we're printing to PDF, scroll the code highlights of
-        // all blocks in the deck into view at once
-        deck.addEventListener('pdf-ready', function() {
-            [].slice.call(deck.deckElement.querySelectorAll('pre code[data-line-numbers].current-fragment')).forEach(function(block) {
-                this.scrollHighlightedLineIntoView(block, {}, true);
-            }, this);
         }, this);
     }
 
@@ -60,8 +54,8 @@ class HighlightPlugin {
         // Don't generate line numbers for empty code blocks
         if (block.innerHTML.trim().length === 0) return;
         if (block.hasAttribute('data-line-numbers')) {
-            this.hljs.lineNumbersBlock(block, { singleLine: true });
-            var scrollState = { currentBlock: block };
+            this.hljs.lineNumbersBlock(block, {singleLine: true});
+            var scrollState = {currentBlock: block};
             // If there is at least one highlight step, generate
             // fragments
             var highlightSteps = this.deserializeHighlightSteps(block.getAttribute('data-line-numbers'));
@@ -73,7 +67,7 @@ class HighlightPlugin {
                     fragmentIndex = null;
                 }
                 // Generate fragments for all steps except the original block
-                highlightSteps.slice(1).forEach(function(highlight) {
+                highlightSteps.slice(1).forEach(function (highlight) {
                     var fragmentBlock = block.cloneNode(true);
                     fragmentBlock.setAttribute('data-line-numbers', this.serializeHighlightSteps([highlight]));
                     fragmentBlock.classList.add('fragment');
@@ -86,8 +80,12 @@ class HighlightPlugin {
                         fragmentBlock.removeAttribute('data-fragment-index');
                     }
                     // Scroll highlights into view as we step through them
-                    fragmentBlock.addEventListener('visible', () => { this.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock, scrollState) });
-                    fragmentBlock.addEventListener('hidden', () => { this.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock.previousSibling, scrollState) });
+                    fragmentBlock.addEventListener('visible', () => {
+                        this.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock, scrollState)
+                    });
+                    fragmentBlock.addEventListener('hidden', () => {
+                        this.scrollHighlightedLineIntoView.bind(Plugin, fragmentBlock.previousSibling, scrollState)
+                    });
                 }, this);
                 block.removeAttribute('data-fragment-index')
                 block.setAttribute('data-line-numbers', this.serializeHighlightSteps([highlightSteps[0]]));
@@ -97,7 +95,7 @@ class HighlightPlugin {
             // support for Element.closest.
             var slide = typeof block.closest === 'function' ? block.closest('section:not(.stack)') : null;
             if (slide) {
-                var scrollFirstHighlightIntoView = function() {
+                var scrollFirstHighlightIntoView = function () {
                     this.scrollHighlightedLineIntoView(block, scrollState, true);
                     slide.removeEventListener('visible', scrollFirstHighlightIntoView);
                 }.bind(this)
@@ -140,7 +138,7 @@ class HighlightPlugin {
             // Don't attempt to scroll if there is no overflow
             if (block.scrollHeight <= viewportHeight) return;
             var time = 0;
-            var animate = function() {
+            var animate = function () {
                 time = Math.min(time + 0.02, 1);
                 // Update our eased scroll position
                 block.scrollTop = startTop + (targetTop - startTop) * this.easeInOutQuart(time);
@@ -161,11 +159,11 @@ class HighlightPlugin {
 
     getHighlightedLineBounds(block) {
         if (block.tagName === undefined) {
-            return { top: 0, bottom: 0 }
+            return {top: 0, bottom: 0}
         }
         var highlightedLines = block.querySelectorAll('.highlight-line');
         if (highlightedLines.length === 0) {
-            return { top: 0, bottom: 0 };
+            return {top: 0, bottom: 0};
         } else {
             var firstHighlight = highlightedLines[0];
             var lastHighlight = highlightedLines[highlightedLines.length - 1];
@@ -179,7 +177,7 @@ class HighlightPlugin {
     highlightLines(block, linesToHighlight) {
         var highlightSteps = this.deserializeHighlightSteps(linesToHighlight || block.getAttribute('data-line-numbers'));
         if (highlightSteps.length) {
-            highlightSteps[0].forEach(function(highlight) {
+            highlightSteps[0].forEach(function (highlight) {
                 var elementsToHighlight = [];
                 // Highlight a range
                 if (typeof highlight.end === 'number') {
@@ -190,7 +188,7 @@ class HighlightPlugin {
                     elementsToHighlight = [].slice.call(block.querySelectorAll('table tr:nth-child(' + highlight.start + ')'));
                 }
                 if (elementsToHighlight.length) {
-                    elementsToHighlight.forEach(function(lineElement) {
+                    elementsToHighlight.forEach(function (lineElement) {
                         lineElement.classList.add('highlight-line');
                     });
                     block.classList.add('has-highlights');
@@ -205,8 +203,8 @@ class HighlightPlugin {
         // Divide up our line number groups
         highlightSteps = highlightSteps.split(this.HIGHLIGHT_STEP_DELIMITER);
 
-        return highlightSteps.map(function(highlights) {
-            return highlights.split(this.HIGHLIGHT_LINE_DELIMITER).map(function(highlight) {
+        return highlightSteps.map(function (highlights) {
+            return highlights.split(this.HIGHLIGHT_LINE_DELIMITER).map(function (highlight) {
                 // Parse valid line numbers
                 if (/^[\d-]+$/.test(highlight)) {
                     highlight = highlight.split(this.HIGHLIGHT_LINE_RANGE_DELIMITER);
@@ -232,8 +230,8 @@ class HighlightPlugin {
     }
 
     serializeHighlightSteps(highlightSteps) {
-        return highlightSteps.map(function(highlights) {
-            return highlights.map(function(highlight) {
+        return highlightSteps.map(function (highlights) {
+            return highlights.map(function (highlight) {
                 // Line range
                 if (typeof highlight.end === 'number') {
                     return highlight.start + this.HIGHLIGHT_LINE_RANGE_DELIMITER + highlight.end;
@@ -276,18 +274,19 @@ class HighlightPlugin {
         var content = this.trimLineBreaks(snippetEl.innerHTML);
         var lines = content.split('\n');
         // Calculate the minimum amount to remove on each line start of the snippet (can be 0)
-        var pad = lines.reduce(function(acc, line) {
+        var pad = lines.reduce(function (acc, line) {
             if (line.length > 0 && this.trimLeft(line).length > 0 && acc > line.length - this.trimLeft(line).length) {
                 return line.length - this.trimLeft(line).length;
             }
             return acc;
         }.bind(this), Number.POSITIVE_INFINITY);
         // Slice each line with this amount
-        return lines.map(function(line, index) {
-                return line.slice(pad);
-            })
+        return lines.map(function (line, index) {
+            return line.slice(pad);
+        })
             .join('\n');
     }
 
 }
-export { HighlightPlugin }
+
+export {HighlightPlugin}

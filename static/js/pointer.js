@@ -1,4 +1,5 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class Pointer {
 
     constructor(deck) {
@@ -67,4 +68,5 @@ class Pointer {
         }
     }
 }
-export { Pointer }
+
+export {Pointer}

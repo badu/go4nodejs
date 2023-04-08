@@ -1,5 +1,5 @@
-import { queryAll, extend, closest, isMobile } from './utils.js';
-import { Deck } from './deck.js';
+import {closest, extend, isMobile, queryAll} from './utils.js';
+import {Deck} from './deck.js';
 
 const IFRAME_DATA_SRC = 'iframe[data-src]';
 const IMG_DATA_SRC = 'img[data-src]';
@@ -12,7 +12,7 @@ const IFRAME_DATA_LAZY_SRC = 'iframe[data-lazy-loaded][src]';
 const IFRAME_SRC = 'iframe[src]';
 
 const fitty = ((w) => {
-    if (!w) return; // no window, early exit  
+    if (!w) return; // no window, early exit
     const toArray = nl => [].slice.call(nl); // node list to array helper method
     const DrawState = { // states
         IDLE: 0,
@@ -26,7 +26,8 @@ const fitty = ((w) => {
     const requestRedraw = 'requestAnimationFrame' in w ? () => {
         w.cancelAnimationFrame(redrawFrame);
         redrawFrame = w.requestAnimationFrame(() => redraw(fitties.filter(f => f.dirty && f.active)));
-    } : () => {};
+    } : () => {
+    };
 
     // sets all fitties to dirty so they are redrawn on the next redraw loop, then calls redraw
     const redrawAll = (type) => () => {
@@ -35,12 +36,14 @@ const fitty = ((w) => {
     };
 
     // redraws fitties so they nicely fit their parent container
-    const redraw = function(fitties) {
+    const redraw = function (fitties) {
         // getting info from the DOM at this point should not trigger a reflow, let's gather as much intel as possible before triggering a reflow
         // check if styles of all fitties have been computed
         fitties
             .filter(f => !f.styleComputed)
-            .forEach(f => { f.styleComputed = computeStyle(f) });
+            .forEach(f => {
+                f.styleComputed = computeStyle(f)
+            });
 
         // restyle elements that require pre-styling, this triggers a reflow, please try to prevent by adding CSS rules (see docs)
         fitties
@@ -63,9 +66,11 @@ const fitty = ((w) => {
         fittiesToRedraw.forEach(dispatchFitEvent);
     };
 
-    const markAsClean = function(f) { f.dirty = DrawState.IDLE };
+    const markAsClean = function (f) {
+        f.dirty = DrawState.IDLE
+    };
 
-    const calculateStyles = function(f) {
+    const calculateStyles = function (f) {
         // get available width from parent node
         f.availableWidth = f.element.parentNode.clientWidth;
         // the space our target element uses
@@ -87,10 +92,12 @@ const fitty = ((w) => {
     };
 
     // should always redraw if is not dirty layout, if is dirty layout, only redraw if size has changed
-    const shouldRedraw = function(f) { f.dirty !== DrawState.DIRTY_LAYOUT || (f.dirty === DrawState.DIRTY_LAYOUT && f.element.parentNode.clientWidth !== f.availableWidth) };
+    const shouldRedraw = function (f) {
+        f.dirty !== DrawState.DIRTY_LAYOUT || (f.dirty === DrawState.DIRTY_LAYOUT && f.element.parentNode.clientWidth !== f.availableWidth)
+    };
 
     // every fitty element is tested for invalid styles
-    const computeStyle = function(f) {
+    const computeStyle = function (f) {
         // get style properties
         const style = w.getComputedStyle(f.element, null);
         // get current font size in pixels (if we already calculated it, use the calculated version)
@@ -101,7 +108,7 @@ const fitty = ((w) => {
     };
 
     // determines if this fitty requires initial styling, can be prevented by applying correct styles through CSS
-    const shouldPreStyle = function(f) {
+    const shouldPreStyle = function (f) {
         let preStyle = false;
         // if we already tested for prestyling we don't have to do it again
         if (f.preStyleTestCompleted) return false;
@@ -121,14 +128,14 @@ const fitty = ((w) => {
     };
 
     // apply styles to single fitty
-    const applyStyle = function(f) {
+    const applyStyle = function (f) {
         f.element.style.whiteSpace = f.whiteSpace;
         f.element.style.display = f.display;
         f.element.style.fontSize = f.currentFontSize + 'px';
     };
 
     // dispatch a fit event on a fitty
-    const dispatchFitEvent = function(f) {
+    const dispatchFitEvent = function (f) {
         f.element.dispatchEvent(new CustomEvent('fit', {
             detail: {
                 oldValue: f.previousFontSize,
@@ -145,7 +152,7 @@ const fitty = ((w) => {
         requestRedraw();
     };
 
-    const init = function(f) {
+    const init = function (f) {
         // save some of the original CSS properties before we change them
         f.originalStyle = {
             whiteSpace: f.element.style.whiteSpace,
@@ -162,7 +169,7 @@ const fitty = ((w) => {
         fitties.push(f);
     }
 
-    const destroy = function(f) {
+    const destroy = function (f) {
         // remove from fitties array
         fitties = fitties.filter(_ => _.element !== f.element);
         // stop observing DOM
@@ -174,16 +181,18 @@ const fitty = ((w) => {
     };
 
     // add a new fitty, does not redraw said fitty
-    const subscribe = function(f) {
+    const subscribe = function (f) {
         if (f.active) return;
         f.active = true;
         requestRedraw();
     };
 
     // remove an existing fitty
-    const unsubscribe = function(f) { f.active = false };
+    const unsubscribe = function (f) {
+        f.active = false
+    };
 
-    const observeMutations = function(f) {
+    const observeMutations = function (f) {
         // no observing?
         if (!f.observeMutations) return;
         // start observing mutations
@@ -221,7 +230,7 @@ const fitty = ((w) => {
         };
 
         // create fitties
-        const publicFitties = elements.map(function(element) {
+        const publicFitties = elements.map(function (element) {
             // create fitty instance
             const f = {
                 // expand defaults
@@ -262,7 +271,7 @@ const fitty = ((w) => {
 
     // handles viewport changes, redraws all fitties, but only does so after a timeout
     let resizeDebounce = null;
-    const onWindowResized = function() {
+    const onWindowResized = function () {
         w.clearTimeout(resizeDebounce);
         resizeDebounce = w.setTimeout(
             redrawAll(DrawState.DIRTY_LAYOUT),
@@ -286,6 +295,7 @@ const fitty = ((w) => {
     return fitty; // export our fitty function, we don't want to keep it to our selves
 
 })(typeof window === 'undefined' ? null : window);
+
 class SlideContent {
 
     constructor(deck) {
@@ -298,10 +308,10 @@ class SlideContent {
         this.load = this.load.bind(this);
         this.unload = this.unload.bind(this);
         this.shouldPreload = this.shouldPreload.bind(this);
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.formatEmbeddedContent();
         }.bind(this));
-        this.deck.on('syncSlide', function(event) {
+        this.deck.on('syncSlide', function (event) {
             this.load(event.data);
         }.bind(this))
     }
@@ -321,7 +331,7 @@ class SlideContent {
         // Show the slide element
         slide.style.display = this.deck.config.display;
         // Media elements with data-src attributes
-        queryAll(slide, `${IMG_DATA_SRC}, ${VIDEO_DATA_SRC}, ${AUDIO_DATA_SRC}, ${IFRAME_DATA_SRC}`).forEach(function(element) {
+        queryAll(slide, `${IMG_DATA_SRC}, ${VIDEO_DATA_SRC}, ${AUDIO_DATA_SRC}, ${IFRAME_DATA_SRC}`).forEach(function (element) {
             if (element.tagName !== 'IFRAME' || this.shouldPreload(element)) {
                 element.setAttribute('src', element.getAttribute('data-src'));
                 element.setAttribute('data-lazy-loaded', '');
@@ -329,9 +339,9 @@ class SlideContent {
             }
         }, this);
         // Media elements with <source> children
-        queryAll(slide, 'video, audio').forEach(function(media) {
+        queryAll(slide, 'video, audio').forEach(function (media) {
             let sources = 0;
-            queryAll(media, SOURCE_DATA_SRC).forEach(function(source) {
+            queryAll(media, SOURCE_DATA_SRC).forEach(function (source) {
                 source.setAttribute('src', source.getAttribute('data-src'));
                 source.removeAttribute('data-src');
                 source.setAttribute('data-lazy-loaded', '');
@@ -383,7 +393,7 @@ class SlideContent {
                         video.setAttribute('playsinline', '');
                     }
                     // Support comma separated lists of video sources
-                    backgroundVideo.split(',').forEach(function(source) {
+                    backgroundVideo.split(',').forEach(function (source) {
                         video.innerHTML += '<source src="' + source + '">';
                     });
                     backgroundContent.appendChild(video);
@@ -418,7 +428,7 @@ class SlideContent {
         // Autosize text with the r-fit-text class based on the
         // size of its container. This needs to happen after the
         // slide is visible in order to measure the text.
-        Array.from(slide.querySelectorAll('.r-fit-text:not([data-fitted])')).forEach(function(element) {
+        Array.from(slide.querySelectorAll('.r-fit-text:not([data-fitted])')).forEach(function (element) {
             element.dataset.fitted = '';
             fitty(element, {
                 minSize: 24,
@@ -437,25 +447,25 @@ class SlideContent {
         if (background) {
             background.style.display = 'none';
             // Unload any background iframes
-            queryAll(background, IFRAME_SRC).forEach(function(el) {
+            queryAll(background, IFRAME_SRC).forEach(function (el) {
                 el.removeAttribute('src');
             });
         }
         // Reset lazy-loaded media elements with src attributes
-        queryAll(slide, `${VIDEO_DATA_LAZY_SRC}, ${AUDIO_DATA_LAZY_SRC}, ${IFRAME_DATA_LAZY_SRC}`).forEach(function(el) {
+        queryAll(slide, `${VIDEO_DATA_LAZY_SRC}, ${AUDIO_DATA_LAZY_SRC}, ${IFRAME_DATA_LAZY_SRC}`).forEach(function (el) {
             el.setAttribute('data-src', el.getAttribute('src'));
             el.removeAttribute('src');
         });
         // Reset lazy-loaded media elements with <source> children
-        queryAll(slide, 'video[data-lazy-loaded] source[src], audio source[src]').forEach(function(src) {
+        queryAll(slide, 'video[data-lazy-loaded] source[src], audio source[src]').forEach(function (src) {
             src.setAttribute('data-src', src.getAttribute('src'));
             src.removeAttribute('src');
         });
     }
 
     formatEmbeddedContent() {
-        let _appendParamToIframeSource = function(srcAttr, srcURL, param) {
-            queryAll(this.deck.dom.slides, 'iframe[' + srcAttr + '*="' + srcURL + '"]').forEach(function(el) {
+        let _appendParamToIframeSource = function (srcAttr, srcURL, param) {
+            queryAll(this.deck.dom.slides, 'iframe[' + srcAttr + '*="' + srcURL + '"]').forEach(function (el) {
                 let src = el.getAttribute(srcAttr);
                 if (src && src.indexOf(param) === -1) {
                     el.setAttribute(srcAttr, src + (!/\?/.test(src) ? '?' : '&') + param);
@@ -473,13 +483,13 @@ class SlideContent {
     startEmbeddedContent(element) {
         if (element && !this.deck.notes.isSpeakerNotesWindow()) {
             // Restart GIFs
-            queryAll(element, 'img[src$=".gif"]').forEach(function(el) {
+            queryAll(element, 'img[src$=".gif"]').forEach(function (el) {
                 // Setting the same unchanged source like this was confirmed
                 // to work in Chrome, FF & Safari
                 el.setAttribute('src', el.getAttribute('src'));
             });
             // HTML5 media elements
-            queryAll(element, 'video, audio').forEach(function(el) {
+            queryAll(element, 'video, audio').forEach(function (el) {
                 if (closest(el, '.fragment') && !closest(el, '.fragment.visible')) {
                     return;
                 }
@@ -493,9 +503,9 @@ class SlideContent {
                 if (autoplay && typeof el.play === 'function') {
                     // If the media is ready, start playback
                     if (el.readyState > 1) {
-                        this.startEmbeddedMedia({ target: el });
+                        this.startEmbeddedMedia({target: el});
                     }
-                    // Mobile devices never fire a loaded event so instead
+                        // Mobile devices never fire a loaded event so instead
                     // of waiting, we initiate playback
                     else if (isMobile) {
                         let promise = el.play();
@@ -520,15 +530,15 @@ class SlideContent {
                 }
             }, this);
             // Normal iframes
-            queryAll(element, IFRAME_SRC).forEach(function(el) {
+            queryAll(element, IFRAME_SRC).forEach(function (el) {
                 if (closest(el, '.fragment') && !closest(el, '.fragment.visible')) {
                     return;
                 }
-                this.startEmbeddedIframe({ target: el });
+                this.startEmbeddedIframe({target: el});
             }, this);
 
             // Lazy loading iframes
-            queryAll(element, IFRAME_DATA_SRC).forEach(function(el) {
+            queryAll(element, IFRAME_DATA_SRC).forEach(function (el) {
                 if (closest(el, '.fragment') && !closest(el, '.fragment.visible')) {
                     return;
                 }
@@ -564,18 +574,6 @@ class SlideContent {
                 if (typeof autoplay !== 'boolean') {
                     autoplay = iframe.hasAttribute('data-autoplay') || !!closest(iframe, '.slide-background');
                 }
-                // YouTube postMessage API
-                if (/youtube\.com\/embed\//.test(iframe.getAttribute('src')) && autoplay) {
-                    iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-                }
-                // Vimeo postMessage API
-                else if (/player\.vimeo\.com\//.test(iframe.getAttribute('src')) && autoplay) {
-                    iframe.contentWindow.postMessage('{"method":"play"}', '*');
-                }
-                // Generic postMessage API
-                else {
-                    iframe.contentWindow.postMessage('slide:start', '*');
-                }
             }
         }
     }
@@ -587,32 +585,20 @@ class SlideContent {
         }, options);
         if (el && el.parentNode) {
             // HTML5 media elements
-            queryAll(el, 'video, audio').forEach(function(el) {
+            queryAll(el, 'video, audio').forEach(function (el) {
                 if (!el.hasAttribute('data-ignore') && typeof el.pause === 'function') {
                     el.setAttribute('data-paused-by-reveal', '');
                     el.pause();
                 }
             });
             // Generic postMessage API for non-lazy loaded iframes
-            queryAll(el, 'iframe').forEach(function(el) {
-                if (el.contentWindow) el.contentWindow.postMessage('slide:stop', '*');
+            queryAll(el, 'iframe').forEach(function (el) {
                 el.removeEventListener('load', this.startEmbeddedIframe);
             }, this);
-            // YouTube postMessage API
-            queryAll(el, 'iframe[src*="youtube.com/embed/"]').forEach(function(el) {
-                if (!el.hasAttribute('data-ignore') && el.contentWindow && typeof el.contentWindow.postMessage === 'function') {
-                    el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-                }
-            });
-            // Vimeo postMessage API
-            queryAll(el, 'iframe[src*="player.vimeo.com/"]').forEach(function(el) {
-                if (!el.hasAttribute('data-ignore') && el.contentWindow && typeof el.contentWindow.postMessage === 'function') {
-                    el.contentWindow.postMessage('{"method":"pause"}', '*');
-                }
-            });
+
             if (options.unloadIframes === true) {
                 // Unload lazy-loaded iframes
-                queryAll(el, IFRAME_DATA_SRC).forEach(function(el) {
+                queryAll(el, IFRAME_DATA_SRC).forEach(function (el) {
                     // Only removing the src doesn't actually unload the frame
                     // in all browsers (Firefox) so we set it to blank first
                     el.setAttribute('src', 'about:blank');
@@ -623,4 +609,4 @@ class SlideContent {
     }
 }
 
-export { SlideContent }
+export {SlideContent}

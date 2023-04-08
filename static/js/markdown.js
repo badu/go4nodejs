@@ -1,4 +1,4 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
 
 const DEFAULT_SLIDE_SEPARATOR = '^\r?\n---\r?\n$',
     DEFAULT_NOTES_SEPARATOR = 'notes?:',
@@ -26,7 +26,9 @@ class MarkdownPlugin {
             throw new Error("expecting instance of Deck");
         }
         this.deck = deck;
-
+        if (marked === undefined) {
+            throw new Error("Marked JS not loaded?");
+        }
         let renderer = new marked.Renderer();
 
         renderer.code = (code, language) => {
@@ -52,13 +54,22 @@ class MarkdownPlugin {
             return `<pre><code ${lineNumbers} class="${language}">${code}</code></pre>`;
         };
 
+        // open links always in a new tab
+        const linkRenderer = renderer.link;
+        renderer.link = (href, title, text) => {
+            const html = linkRenderer.call(renderer, href, title, text);
+            return html.replace(/^<a /, '<a target="_blank" rel="nofollow" ');
+        };
+
         marked.setOptions({
             renderer,
             ...deck.config.markdown
         });
-        const f = function() {
+
+        const f = function () {
             this.convertSlides()
         }.bind(this);
+
         return this.processSlides(deck.deckElement).then(f);
 
     }
@@ -128,11 +139,10 @@ class MarkdownPlugin {
         var notesMatch = content.split(new RegExp(options.notesSeparator, 'mgi'));
 
         if (notesMatch.length === 2) {
-            content = notesMatch[0] + '<aside class="notes">' + marked(notesMatch[1].trim()) + '</aside>';
+            content = notesMatch[0] + '<aside class="notes">' + marked.parse(notesMatch[1].trim()) + '</aside>';
         }
 
-        // prevent script end tags in the content from interfering
-        // with parsing
+        // prevent script end tags in the content from interfering with parsing
         content = content.replace(/<\/script>/g, SCRIPT_END_PLACEHOLDER);
 
         return '<script type="text/template">' + content + '</script>';
@@ -185,11 +195,11 @@ class MarkdownPlugin {
 
         var markdownSections = '';
         // flatten the hierarchical stack, and insert <section data-markdown> tags
-        sectionStack.forEach(function(stack) {
+        sectionStack.forEach(function (stack) {
             // vertical
             if (stack instanceof Array) {
                 markdownSections += '<section ' + options.attributes + '>';
-                stack.forEach(function(child) {
+                stack.forEach(function (child) {
                     markdownSections += '<section data-markdown>' + this.createMarkdownSlide(child, options) + '</section>';
                 }, this);
                 markdownSections += '</section>';
@@ -203,18 +213,17 @@ class MarkdownPlugin {
     }
 
     processSlides(scope) {
-        return new Promise(function(resolve) {
+        return new Promise(function (resolve) {
 
             var externalPromises = [];
 
-            [].slice.call(scope.querySelectorAll('[data-markdown]:not([data-markdown-parsed])')).forEach(function(section) {
+            [].slice.call(scope.querySelectorAll('[data-markdown]:not([data-markdown-parsed])')).forEach(function (section) {
 
                 if (section.getAttribute('data-markdown').length) {
 
                     externalPromises.push(this.loadExternalMarkdown(section).then(
-
                         // Finished loading external file
-                        function(xhr, url) {
+                        function (xhr, url) {
                             section.outerHTML = this.slidify(xhr.responseText, {
                                 separator: section.getAttribute('data-separator'),
                                 verticalSeparator: section.getAttribute('data-separator-vertical'),
@@ -224,14 +233,13 @@ class MarkdownPlugin {
                         },
 
                         // Failed to load markdown
-                        function(xhr, url) {
+                        function (xhr, url) {
                             section.outerHTML = '<section data-state="alert">' +
                                 'ERROR: The attempt to fetch ' + url + ' failed with HTTP status ' + xhr.status + '.' +
                                 'Check your browser\'s JavaScript console for more details.' +
                                 '<p>Remember that you need to serve the presentation HTML from a HTTP server.</p>' +
                                 '</section>';
                         }
-
                     ));
 
                 } else if (section.getAttribute('data-separator') || section.getAttribute('data-separator-vertical') || section.getAttribute('data-separator-notes')) {
@@ -257,7 +265,7 @@ class MarkdownPlugin {
 
     loadExternalMarkdown(section) {
 
-        return new Promise(function(resolve, reject) {
+        return new Promise(function (resolve, reject) {
 
             var xhr = new XMLHttpRequest(),
                 url = section.getAttribute('data-markdown');
@@ -269,7 +277,7 @@ class MarkdownPlugin {
                 xhr.overrideMimeType('text/html; charset=' + datacharset);
             }
 
-            xhr.onreadystatechange = function(section, xhr) {
+            xhr.onreadystatechange = function (section, xhr) {
                 if (xhr.readyState === 4) {
                     // file protocol yields status code 0 (useful for local debug, mobile applications etc.)
                     if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
@@ -360,14 +368,15 @@ class MarkdownPlugin {
 
         var sections = this.deck.deckElement.querySelectorAll('[data-markdown]:not([data-markdown-parsed])');
 
-        [].slice.call(sections).forEach(function(section) {
+        [].slice.call(sections).forEach(function (section) {
 
             section.setAttribute('data-markdown-parsed', true)
 
             var notes = section.querySelector('aside.notes');
             var markdown = this.getMarkdownFromSlide(section);
 
-            section.innerHTML = marked(markdown);
+            section.innerHTML = marked.parse(markdown);
+
             this.addAttributes(section, section, null, section.getAttribute('data-element-attributes') ||
                 section.parentNode.getAttribute('data-element-attributes') ||
                 DEFAULT_ELEMENT_ATTRIBUTES_SEPARATOR,
@@ -387,4 +396,5 @@ class MarkdownPlugin {
         return input.replace(/([&<>'"])/g, char => HTML_ESCAPE_MAP[char]);
     }
 }
-export { MarkdownPlugin };
+
+export {MarkdownPlugin};

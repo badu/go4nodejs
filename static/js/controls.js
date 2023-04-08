@@ -1,5 +1,6 @@
-import { queryAll } from './utils.js';
-import { Deck } from './deck.js';
+import {queryAll} from './utils.js';
+import {Deck} from './deck.js';
+
 class Controls {
     constructor(deck) {
         if (!(deck instanceof Deck)) {
@@ -13,22 +14,22 @@ class Controls {
         this.onNavigateDownClicked = this.onNavigateDownClicked.bind(this);
         this.onNavigatePrevClicked = this.onNavigatePrevClicked.bind(this);
         this.onNavigateNextClicked = this.onNavigateNextClicked.bind(this);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.update();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.update();
         }.bind(this));
     }
 
-    render(el, rtl) {
+    render(el) {
         this.element = document.createElement('aside');
         el.appendChild(this.element);
 
         this.element.className = 'controls';
         this.element.innerHTML =
-            `<button class="navigate-left" aria-label="${rtl ? 'next slide' : 'previous slide'}"><div class="controls-arrow"></div></button>
-			<button class="navigate-right" aria-label="${rtl ? 'previous slide' : 'next slide'}"><div class="controls-arrow"></div></button>
+            `<button class="navigate-left" aria-label="'previous slide'"><div class="controls-arrow"></div></button>
+			<button class="navigate-right" aria-label="'next slide'"><div class="controls-arrow"></div></button>
 			<button class="navigate-up" aria-label="above slide"><div class="controls-arrow"></div></button>
 			<button class="navigate-down" aria-label="below slide"><div class="controls-arrow"></div></button>`;
 
@@ -47,6 +48,14 @@ class Controls {
         this.controlsDownArrow = this.element.querySelector('.navigate-down');
     }
 
+    hide() {
+        this.element.style.display = 'none';
+    }
+
+    show() {
+        this.element.style.display = 'block';
+    }
+
     configure(config) {
         this.element.style.display = config.controls ? 'block' : 'none';
         this.element.setAttribute('data-controls-layout', config.controlsLayout);
@@ -54,72 +63,120 @@ class Controls {
     }
 
     bind() {
-        this.controlsLeft.forEach(function(el) { el.addEventListener('touchstart', this.onNavigateLeftClicked, { passive: true, capture: false }) }, this);
-        this.controlsRight.forEach(function(el) { el.addEventListener('touchstart', this.onNavigateRightClicked, { passive: true, capture: false }) }, this);
-        this.controlsUp.forEach(function(el) { el.addEventListener('touchstart', this.onNavigateUpClicked, { passive: true, capture: false }) }, this);
-        this.controlsDown.forEach(function(el) { el.addEventListener('touchstart', this.onNavigateDownClicked, { passive: true, capture: false }) }, this);
-        this.controlsPrev.forEach(function(el) { el.addEventListener('touchstart', this.onNavigatePrevClicked, { passive: true, capture: false }) }, this);
-        this.controlsNext.forEach(function(el) { el.addEventListener('touchstart', this.onNavigateNextClicked, { passive: true, capture: false }) }, this);
+        this.controlsLeft.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigateLeftClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsRight.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigateRightClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsUp.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigateUpClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsDown.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigateDownClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsPrev.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigatePrevClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsNext.forEach(function (el) {
+            el.addEventListener('touchstart', this.onNavigateNextClicked, {passive: true, capture: false})
+        }, this);
         if (!this.isAndroid) {
-            this.controlsLeft.forEach(function(el) { el.addEventListener('click', this.onNavigateLeftClicked, false) }, this);
-            this.controlsRight.forEach(function(el) { el.addEventListener('click', this.onNavigateRightClicked, false) }, this);
-            this.controlsUp.forEach(function(el) { el.addEventListener('click', this.onNavigateUpClicked, false) }, this);
-            this.controlsDown.forEach(function(el) { el.addEventListener('click', this.onNavigateDownClicked, false) }, this);
-            this.controlsPrev.forEach(function(el) { el.addEventListener('click', this.onNavigatePrevClicked, false) }, this);
-            this.controlsNext.forEach(function(el) { el.addEventListener('click', this.onNavigateNextClicked, false) }, this);
+            this.controlsLeft.forEach(function (el) {
+                el.addEventListener('click', this.onNavigateLeftClicked, false)
+            }, this);
+            this.controlsRight.forEach(function (el) {
+                el.addEventListener('click', this.onNavigateRightClicked, false)
+            }, this);
+            this.controlsUp.forEach(function (el) {
+                el.addEventListener('click', this.onNavigateUpClicked, false)
+            }, this);
+            this.controlsDown.forEach(function (el) {
+                el.addEventListener('click', this.onNavigateDownClicked, false)
+            }, this);
+            this.controlsPrev.forEach(function (el) {
+                el.addEventListener('click', this.onNavigatePrevClicked, false)
+            }, this);
+            this.controlsNext.forEach(function (el) {
+                el.addEventListener('click', this.onNavigateNextClicked, false)
+            }, this);
         }
     }
 
     unbind() {
-        this.controlsLeft.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigateLeftClicked, { passive: true, capture: false }) }, this);
-        this.controlsRight.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigateRightClicked, { passive: true, capture: false }) }, this);
-        this.controlsUp.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigateUpClicked, { passive: true, capture: false }) }, this);
-        this.controlsDown.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigateDownClicked, { passive: true, capture: false }) }, this);
-        this.controlsPrev.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigatePrevClicked, { passive: true, capture: false }) }, this);
-        this.controlsNext.forEach(function(el) { el.removeEventListener('touchstart', this.onNavigateNextClicked, { passive: true, capture: false }) }, this);
+        this.controlsLeft.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigateLeftClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsRight.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigateRightClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsUp.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigateUpClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsDown.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigateDownClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsPrev.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigatePrevClicked, {passive: true, capture: false})
+        }, this);
+        this.controlsNext.forEach(function (el) {
+            el.removeEventListener('touchstart', this.onNavigateNextClicked, {passive: true, capture: false})
+        }, this);
         if (!this.isAndroid) {
-            this.controlsLeft.forEach(function(el) { el.removeEventListener('click', this.onNavigateLeftClicked, false) }, this);
-            this.controlsRight.forEach(function(el) { el.removeEventListener('click', this.onNavigateRightClicked, false) }, this);
-            this.controlsUp.forEach(function(el) { el.removeEventListener('click', this.onNavigateUpClicked, false) }, this);
-            this.controlsDown.forEach(function(el) { el.removeEventListener('click', this.onNavigateDownClicked, false) }, this);
-            this.controlsPrev.forEach(function(el) { el.removeEventListener('click', this.onNavigatePrevClicked, false) }, this);
-            this.controlsNext.forEach(function(el) { el.removeEventListener('click', this.onNavigateNextClicked, false) }, this);
+            this.controlsLeft.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigateLeftClicked, false)
+            }, this);
+            this.controlsRight.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigateRightClicked, false)
+            }, this);
+            this.controlsUp.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigateUpClicked, false)
+            }, this);
+            this.controlsDown.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigateDownClicked, false)
+            }, this);
+            this.controlsPrev.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigatePrevClicked, false)
+            }, this);
+            this.controlsNext.forEach(function (el) {
+                el.removeEventListener('click', this.onNavigateNextClicked, false)
+            }, this);
         }
     }
 
     update() {
         let routes = this.deck.availableRoutes();
         // Remove the 'enabled' class from all directions
-        [...this.controlsLeft, ...this.controlsRight, ...this.controlsUp, ...this.controlsDown, ...this.controlsPrev, ...this.controlsNext].forEach(function(node) {
+        [...this.controlsLeft, ...this.controlsRight, ...this.controlsUp, ...this.controlsDown, ...this.controlsPrev, ...this.controlsNext].forEach(function (node) {
             node.classList.remove('enabled', 'fragmented');
             // Set 'disabled' attribute on all directions
             node.setAttribute('disabled', 'disabled');
         });
 
         // Add the 'enabled' class to the available routes; remove 'disabled' attribute to enable buttons
-        if (routes.left) this.controlsLeft.forEach(function(el) {
+        if (routes.left) this.controlsLeft.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
-        if (routes.right) this.controlsRight.forEach(function(el) {
+        if (routes.right) this.controlsRight.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
-        if (routes.up) this.controlsUp.forEach(function(el) {
+        if (routes.up) this.controlsUp.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
-        if (routes.down) this.controlsDown.forEach(function(el) {
+        if (routes.down) this.controlsDown.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
 
         // Prev/next buttons
-        if (routes.left || routes.up) this.controlsPrev.forEach(function(el) {
+        if (routes.left || routes.up) this.controlsPrev.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
-        if (routes.right || routes.down) this.controlsNext.forEach(function(el) {
+        if (routes.right || routes.down) this.controlsNext.forEach(function (el) {
             el.classList.add('enabled');
             el.removeAttribute('disabled');
         });
@@ -129,31 +186,31 @@ class Controls {
         if (currentSlide) {
             let fragmentsRoutes = this.deck.fragments.availableRoutes();
             // Always apply fragment decorator to prev/next buttons
-            if (fragmentsRoutes.prev) this.controlsPrev.forEach(function(el) {
+            if (fragmentsRoutes.prev) this.controlsPrev.forEach(function (el) {
                 el.classList.add('fragmented', 'enabled');
                 el.removeAttribute('disabled');
             });
-            if (fragmentsRoutes.next) this.controlsNext.forEach(function(el) {
+            if (fragmentsRoutes.next) this.controlsNext.forEach(function (el) {
                 el.classList.add('fragmented', 'enabled');
                 el.removeAttribute('disabled');
             });
             // Apply fragment decorators to directional buttons based on
             // what slide axis they are in
             if (this.deck.isVerticalSlide(currentSlide)) {
-                if (fragmentsRoutes.prev) this.controlsUp.forEach(function(el) {
+                if (fragmentsRoutes.prev) this.controlsUp.forEach(function (el) {
                     el.classList.add('fragmented', 'enabled');
                     el.removeAttribute('disabled');
                 });
-                if (fragmentsRoutes.next) this.controlsDown.forEach(function(el) {
+                if (fragmentsRoutes.next) this.controlsDown.forEach(function (el) {
                     el.classList.add('fragmented', 'enabled');
                     el.removeAttribute('disabled');
                 });
             } else {
-                if (fragmentsRoutes.prev) this.controlsLeft.forEach(function(el) {
+                if (fragmentsRoutes.prev) this.controlsLeft.forEach(function (el) {
                     el.classList.add('fragmented', 'enabled');
                     el.removeAttribute('disabled');
                 });
-                if (fragmentsRoutes.next) this.controlsRight.forEach(function(el) {
+                if (fragmentsRoutes.next) this.controlsRight.forEach(function (el) {
                     el.classList.add('fragmented', 'enabled');
                     el.removeAttribute('disabled');
                 });
@@ -168,18 +225,10 @@ class Controls {
                 this.controlsDownArrow.classList.add('highlight');
             } else {
                 this.controlsDownArrow.classList.remove('highlight');
-                if (this.deck.config.rtl) {
-                    if (!this.deck.navigationHistory.hasNavigatedHorizontally && routes.left && indices.v === 0) {
-                        this.controlsLeftArrow.classList.add('highlight');
-                    } else {
-                        this.controlsLeftArrow.classList.remove('highlight');
-                    }
+                if (!this.deck.navigationHistory.hasNavigatedHorizontally && routes.right && indices.v === 0) {
+                    this.controlsRightArrow.classList.add('highlight');
                 } else {
-                    if (!this.deck.navigationHistory.hasNavigatedHorizontally && routes.right && indices.v === 0) {
-                        this.controlsRightArrow.classList.add('highlight');
-                    } else {
-                        this.controlsRightArrow.classList.remove('highlight');
-                    }
+                    this.controlsRightArrow.classList.remove('highlight');
                 }
             }
         }
@@ -230,4 +279,4 @@ class Controls {
     }
 }
 
-export { Controls };
+export {Controls};

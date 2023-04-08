@@ -1,4 +1,5 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class Keyboard {
 
     constructor(deck) {
@@ -68,7 +69,7 @@ class Keyboard {
     }
 
     triggerKey(keyCode) {
-        this.onDocumentKeyDown({ keyCode });
+        this.onDocumentKeyDown({keyCode});
     }
 
     registerKeyboardShortcut(key, value) {
@@ -220,7 +221,7 @@ class Keyboard {
             // H, LEFT
             else if (keyCode === 72 || keyCode === 37) {
                 if (firstSlideShortcut) {
-                    this.deck.slide(0);
+                    this.deck.slide('key', 0);
                 } else if (!this.deck.overview.isActive() && useLinearMode) {
                     this.deck.navigatePrev();
                 } else {
@@ -230,7 +231,7 @@ class Keyboard {
             // L, RIGHT
             else if (keyCode === 76 || keyCode === 39) {
                 if (lastSlideShortcut) {
-                    this.deck.slide(Number.MAX_VALUE);
+                    this.deck.slide('key', Number.MAX_VALUE);
                 } else if (!this.deck.overview.isActive() && useLinearMode) {
                     this.deck.navigateNext();
                 } else {
@@ -255,11 +256,11 @@ class Keyboard {
             }
             // HOME
             else if (keyCode === 36) {
-                this.deck.slide(0);
+                this.deck.slide('key', 0);
             }
             // END
             else if (keyCode === 35) {
-                this.deck.slide(Number.MAX_VALUE);
+                this.deck.slide('key', Number.MAX_VALUE);
             }
             // SPACE
             else if (keyCode === 32) {
@@ -309,4 +310,5 @@ class Keyboard {
         this.deck.cueAutoSlide();
     }
 }
-export { Keyboard }
+
+export {Keyboard}

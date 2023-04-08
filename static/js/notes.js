@@ -1,4 +1,5 @@
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
+
 class Notes {
 
     constructor(deck) {
@@ -8,14 +9,14 @@ class Notes {
         this.deck = deck;
         this.getSlideNotes = this.getSlideNotes.bind(this);
         this.isSpeakerNotesWindow = this.isSpeakerNotesWindow.bind(this);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.update();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.update();
             this.updateVisibility();
         }.bind(this));
-        this.deck.on('syncSlide', function(event) {
+        this.deck.on('syncSlide', function (event) {
             this.update();
         }.bind(this))
     }
@@ -35,13 +36,13 @@ class Notes {
     }
 
     update() {
-        if (this.deck.config.showNotes && this.element && this.deck.currentSlide && !this.deck.print.isPrintingPDF()) {
+        if (this.deck.config.showNotes && this.element && this.deck.currentSlide) {
             this.element.innerHTML = this.notes.getSlideNotes() || '<span class="notes-placeholder">No notes on this slide.</span>';
         }
     }
 
     updateVisibility() {
-        if (this.deck.config.showNotes && this.hasNotes() && !this.deck.print.isPrintingPDF()) {
+        if (this.deck.config.showNotes && this.hasNotes()) {
             this.deck.deckElement.classList.add('show-notes');
         } else {
             this.deck.deckElement.classList.remove('show-notes');
@@ -69,4 +70,5 @@ class Notes {
         return null;
     }
 }
-export { Notes };
+
+export {Notes};

@@ -9,7 +9,7 @@ const queryAll = (el, selector) => {
     return Array.from(el.querySelectorAll(selector));
 }
 
-const deserialize = function(value) {
+const deserialize = function (value) {
     if (typeof value === 'string') {
         if (value === 'null') return null;
         else if (value === 'true') return true;
@@ -66,6 +66,51 @@ const isChrome = /chrome/i.test(navigator.userAgent) && !/edge/i.test(navigator.
 
 const supportsZoom = 'zoom' in document.createElement('div').style && !isMobile && (isChrome || /Version\/[\d\.]+.*Safari/.test(navigator.userAgent));
 
+const HideControlsCommand = 1;
+const ShowControlsCommand = 2;
+const SlidedCommand = 3;
+const PausedCommand = 4;
+const ResumedCommand = 5;
+const StatusRequestCommand = 6;
+const StatusReplyCommand = 7;
+const OverviewShownCommand = 8;
+const OverviewHiddenCommand = 9;
+const ConnectedReplyCommand = 10;
+const FragmentShownCommand = 11;
+const ClientStatsCommand = 12;
+const DisplayNotificationCommand = 13;
+
+const decodeWSMessageType = function (message) {
+    switch (message.com) {
+        case HideControlsCommand:
+            return 'hideControls';
+        case ShowControlsCommand:
+            return 'showControls';
+        case SlidedCommand:
+            return 'slided';
+        case PausedCommand:
+            return 'paused';
+        case ResumedCommand:
+            return 'resumed';
+        case StatusRequestCommand:
+            return 'statusRequest';
+        case StatusReplyCommand:
+            return 'statusReply';
+        case OverviewShownCommand:
+            return 'overviewShown';
+        case OverviewHiddenCommand:
+            return 'overviewHidden';
+        case ConnectedReplyCommand:
+            return 'connected';
+        case FragmentShownCommand:
+            return 'fragmentShown';
+        case ClientStatsCommand:
+            return 'clientStatus';
+        case DisplayNotificationCommand:
+            return 'displayNotification';
+    }
+}
+
 export {
     createStyleSheet,
     closest,
@@ -76,5 +121,19 @@ export {
     extend,
     SLIDES_SELECTOR,
     isMobile,
-    supportsZoom
+    supportsZoom,
+    HideControlsCommand,
+    ShowControlsCommand,
+    SlidedCommand,
+    PausedCommand,
+    ResumedCommand,
+    StatusRequestCommand,
+    StatusReplyCommand,
+    OverviewShownCommand,
+    OverviewHiddenCommand,
+    ConnectedReplyCommand,
+    FragmentShownCommand,
+    ClientStatsCommand,
+    DisplayNotificationCommand,
+    decodeWSMessageType,
 }

@@ -1,5 +1,6 @@
-import { queryAll } from './utils.js';
-import { Deck } from './deck.js';
+import {queryAll} from './utils.js';
+import {Deck} from './deck.js';
+
 class Fragments {
     constructor(deck) {
         if (!(deck instanceof Deck)) {
@@ -12,13 +13,13 @@ class Fragments {
         this.prev = this.prev.bind(this);
         this.next = this.next.bind(this);
         this.availableRoutes = this.availableRoutes.bind(this);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.update();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.sortAll();
         }.bind(this));
-        this.deck.on('syncSlide', function(event) {
+        this.deck.on('syncSlide', function (event) {
             this.sync(event.data);
         }.bind(this))
     }
@@ -32,14 +33,14 @@ class Fragments {
     }
 
     disable() {
-        queryAll(this.deck.dom.slides, '.fragment').forEach(function(element) {
+        queryAll(this.deck.dom.slides, '.fragment').forEach(function (element) {
             element.classList.add('visible');
             element.classList.remove('current-fragment');
         });
     }
 
     enable() {
-        queryAll(this.deck.dom.slides, '.fragment').forEach(function(element) {
+        queryAll(this.deck.dom.slides, '.fragment').forEach(function (element) {
             element.classList.remove('visible');
             element.classList.remove('current-fragment');
         });
@@ -55,7 +56,7 @@ class Fragments {
                 next: !!hiddenFragments.length
             };
         } else {
-            return { prev: false, next: false };
+            return {prev: false, next: false};
         }
     }
 
@@ -66,7 +67,7 @@ class Fragments {
             sorted = [];
 
         // Group ordered and unordered elements
-        fragments.forEach(function(fragment) {
+        fragments.forEach(function (fragment) {
             if (fragment.hasAttribute('data-fragment-index')) {
                 let index = parseInt(fragment.getAttribute('data-fragment-index'), 10);
                 if (!ordered[index]) {
@@ -88,8 +89,8 @@ class Fragments {
 
         // Push all fragments in their sorted order to an array,
         // this flattens the groups
-        ordered.forEach(function(group) {
-            group.forEach(function(fragment) {
+        ordered.forEach(function (group) {
+            group.forEach(function (fragment) {
                 sorted.push(fragment);
                 fragment.setAttribute('data-fragment-index', index);
             });
@@ -101,9 +102,9 @@ class Fragments {
     }
 
     sortAll() {
-        this.deck.getHorizontalSlides().forEach(function(horizontalSlide) {
+        this.deck.getHorizontalSlides().forEach(function (horizontalSlide) {
             let verticalSlides = queryAll(horizontalSlide, 'section');
-            verticalSlides.forEach(function(verticalSlide, y) {
+            verticalSlides.forEach(function (verticalSlide, y) {
                 this.sort(verticalSlide.querySelectorAll('.fragment'));
             }, this);
             if (verticalSlides.length === 0) this.sort(horizontalSlide.querySelectorAll('.fragment'));
@@ -126,7 +127,7 @@ class Fragments {
                         index = parseInt(currentFragment.getAttribute('data-fragment-index') || 0, 10);
                     }
                 }
-                Array.from(fragments).forEach(function(el, i) {
+                Array.from(fragments).forEach(function (el, i) {
                     if (el.hasAttribute('data-fragment-index')) {
                         i = parseInt(el.getAttribute('data-fragment-index'), 10);
                     }
@@ -244,4 +245,4 @@ class Fragments {
     }
 }
 
-export { Fragments };
+export {Fragments};

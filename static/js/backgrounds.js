@@ -1,5 +1,6 @@
-import { Deck } from './deck.js';
-import { queryAll } from './utils.js';
+import {Deck} from './deck.js';
+import {queryAll} from './utils.js';
+
 class Backgrounds {
 
     constructor(deck) {
@@ -13,15 +14,15 @@ class Backgrounds {
         this.element = document.createElement('div');
         this.element.className = 'backgrounds';
         this.deck.deckElement.appendChild(this.element);
-        this.deck.on('slided', function(event) {
+        this.deck.on('slided', function (event) {
             this.update();
             this.updateParallax();
         }.bind(this));
-        this.deck.on('synced', function(event) {
+        this.deck.on('synced', function (event) {
             this.create();
             this.update(true);
         }.bind(this));
-        this.deck.on('syncSlide', function(event) {
+        this.deck.on('syncSlide', function (event) {
             this.sync(event.data);
             this.update();
         }.bind(this))
@@ -32,10 +33,10 @@ class Backgrounds {
         this.element.innerHTML = '';
         this.element.classList.add('no-transition');
         // Iterate over all horizontal slides
-        this.deck.getHorizontalSlides().forEach(function(slideh) {
+        this.deck.getHorizontalSlides().forEach(function (slideh) {
             let backgroundStack = this.createBackground(slideh, this.element);
             // Iterate over all vertical slides
-            queryAll(slideh, 'section').forEach(function(slidev) {
+            queryAll(slideh, 'section').forEach(function (slidev) {
                 this.createBackground(slidev, backgroundStack);
                 backgroundStack.classList.add('stack');
             }, this);
@@ -52,7 +53,7 @@ class Backgrounds {
             // needed for proper transitions to be set on the element via CSS. To remove
             // annoying background slide-in effect when the presentation starts, apply
             // these properties after short time delay
-            setTimeout(function() {
+            setTimeout(function () {
                 this.deck.deckElement.classList.add('has-parallax-background');
             }.bind(this), 1);
         } else {
@@ -184,11 +185,11 @@ class Backgrounds {
         let indices = this.deck.getIndices();
         let currentBackground = null;
         // Reverse past/future classes when in RTL mode
-        let horizontalPast = this.deck.config.rtl ? 'future' : 'past',
-            horizontalFuture = this.deck.config.rtl ? 'past' : 'future';
+        let horizontalPast = 'past',
+            horizontalFuture = 'future';
         // Update the classes of all backgrounds to match the
         // states of their slides (past/present/future)
-        Array.from(this.element.childNodes).forEach(function(backgroundh, h) {
+        Array.from(this.element.childNodes).forEach(function (backgroundh, h) {
             backgroundh.classList.remove('past', 'present', 'future');
             if (h < indices.h) {
                 backgroundh.classList.add(horizontalPast);
@@ -217,7 +218,7 @@ class Backgrounds {
 
         // Stop content inside of previous backgrounds
         if (this.previousBackground) {
-            this.deck.slideContent.stopEmbeddedContent(this.previousBackground, { unloadIframes: !this.deck.slideContent.shouldPreload(this.previousBackground) });
+            this.deck.slideContent.stopEmbeddedContent(this.previousBackground, {unloadIframes: !this.deck.slideContent.shouldPreload(this.previousBackground)});
         }
 
         // Start content in the current background
@@ -245,7 +246,7 @@ class Backgrounds {
         // If there's a background brightness flag for this slide,
         // bubble it to the .reveal container
         if (currentSlide) {
-            ['has-light-background', 'has-dark-background'].forEach(function(classToBubble) {
+            ['has-light-background', 'has-dark-background'].forEach(function (classToBubble) {
                 if (currentSlide.classList.contains(classToBubble)) {
                     this.deck.deckElement.classList.add(classToBubble);
                 } else {
@@ -254,7 +255,7 @@ class Backgrounds {
             }, this);
         }
         // Allow the first background to apply without transition
-        setTimeout(function() {
+        setTimeout(function () {
             this.element.classList.remove('no-transition');
         }.bind(this), 1);
     }
@@ -349,4 +350,5 @@ class Backgrounds {
         return null;
     }
 }
-export { Backgrounds }
+
+export {Backgrounds}

@@ -1,6 +1,6 @@
-import { queryAll, createStyleSheet, extend, closest, matches } from './utils.js';
+import {closest, createStyleSheet, extend, matches, queryAll} from './utils.js';
 
-import { Deck } from './deck.js';
+import {Deck} from './deck.js';
 
 let autoAnimateCounter = 0; // Counter used to generate unique IDs for auto-animated elements
 
@@ -41,7 +41,7 @@ class AutoAnimate {
                 let defaultUnmatchedDuration = animationOptions.duration * 0.8,
                     defaultUnmatchedDelay = animationOptions.duration * 0.2;
 
-                this.getUnmatchedAutoAnimateElements(toSlide).forEach(function(unmatchedElement) {
+                this.getUnmatchedAutoAnimateElements(toSlide).forEach(function (unmatchedElement) {
                     let unmatchedOptions = this.getAutoAnimateOptions(unmatchedElement, animationOptions);
                     let id = 'unmatched';
                     // If there is a duration or delay set specifically for this
@@ -62,7 +62,7 @@ class AutoAnimate {
             this.autoAnimateStyleSheet.innerHTML = css.join('');
 
             // Start the animation next cycle
-            requestAnimationFrame(function() {
+            requestAnimationFrame(function () {
                 if (this.autoAnimateStyleSheet) {
                     // This forces our newly injected styles to be applied in Firefox
                     getComputedStyle(this.autoAnimateStyleSheet).fontWeight;
@@ -84,11 +84,11 @@ class AutoAnimate {
 
     reset() {
         // Reset slides
-        queryAll(this.deck.deckElement, '[data-auto-animate]:not([data-auto-animate=""])').forEach(function(element) {
+        queryAll(this.deck.deckElement, '[data-auto-animate]:not([data-auto-animate=""])').forEach(function (element) {
             element.dataset.autoAnimate = '';
         });
         // Reset elements
-        queryAll(this.deck.deckElement, '[data-auto-animate-target]').forEach(function(element) {
+        queryAll(this.deck.deckElement, '[data-auto-animate-target]').forEach(function (element) {
             delete element.dataset.autoAnimateTarget;
         });
         // Remove the animation sheet
@@ -203,11 +203,11 @@ class AutoAnimate {
             toProps.styles['will-change'] = toStyleProperties.join(', ');
             // Build up our custom CSS. We need to override inline styles
             // so we need to make our styles vErY IMPORTANT!1!!
-            let fromCSS = Object.keys(fromProps.styles).map(function(propertyName) {
+            let fromCSS = Object.keys(fromProps.styles).map(function (propertyName) {
                 return propertyName + ': ' + fromProps.styles[propertyName] + ' !important;';
             }).join('');
 
-            let toCSS = Object.keys(toProps.styles).map(function(propertyName) {
+            let toCSS = Object.keys(toProps.styles).map(function (propertyName) {
                 return propertyName + ': ' + toProps.styles[propertyName] + ' !important;';
             }).join('');
 
@@ -245,7 +245,7 @@ class AutoAnimate {
 
     getAutoAnimatableProperties(direction, element, elementOptions) {
         let config = this.deck.config;
-        let properties = { styles: [] };
+        let properties = {styles: []};
         // Position and size
         if (elementOptions.translate !== false || elementOptions.scale !== false) {
             let bounds;
@@ -277,17 +277,17 @@ class AutoAnimate {
         const computedStyles = getComputedStyle(element);
 
         // CSS styles
-        (elementOptions.styles || config.autoAnimateStyles).forEach(function(style) {
+        (elementOptions.styles || config.autoAnimateStyles).forEach(function (style) {
             let value;
 
             // `style` is either the property name directly, or an object
             // definition of a style property
-            if (typeof style === 'string') style = { property: style };
+            if (typeof style === 'string') style = {property: style};
 
             if (typeof style.from !== 'undefined' && direction === 'from') {
-                value = { value: style.from, explicitValue: true };
+                value = {value: style.from, explicitValue: true};
             } else if (typeof style.to !== 'undefined' && direction === 'to') {
-                value = { value: style.to, explicitValue: true };
+                value = {value: style.to, explicitValue: true};
             } else {
                 value = computedStyles[style.property];
             }
@@ -304,7 +304,7 @@ class AutoAnimate {
         let pairs = matcher.call(this, fromSlide, toSlide);
         let reserved = [];
         // Remove duplicate pairs
-        return pairs.filter(function(pair, index) {
+        return pairs.filter(function (pair, index) {
             if (reserved.indexOf(pair.to) === -1) {
                 reserved.push(pair.to);
                 return true;
@@ -318,32 +318,32 @@ class AutoAnimate {
         const textNodes = 'h1, h2, h3, h4, h5, h6, p, li';
         const mediaNodes = 'img, video, iframe';
         // Explicit matches via data-id
-        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, '[data-id]', function(node) {
+        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, '[data-id]', function (node) {
             return node.nodeName + ':::' + node.getAttribute('data-id');
         });
         // Text
-        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, textNodes, function(node) {
+        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, textNodes, function (node) {
             return node.nodeName + ':::' + node.innerText;
         });
         // Media
-        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, mediaNodes, function(node) {
+        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, mediaNodes, function (node) {
             return node.nodeName + ':::' + (node.getAttribute('src') || node.getAttribute('data-src'));
         });
         // Code
-        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, codeNodes, function(node) {
+        this.findAutoAnimateMatches(pairs, fromSlide, toSlide, codeNodes, function (node) {
             return node.nodeName + ':::' + node.innerText;
         });
-        pairs.forEach(function(pair) {
+        pairs.forEach(function (pair) {
             // Disable scale transformations on text nodes, we transition
             // each individual text property instead
             if (matches(pair.from, textNodes)) {
-                pair.options = { scale: false };
+                pair.options = {scale: false};
             }
             // Animate individual lines of code
             else if (matches(pair.from, codeNodes)) {
                 // Transition the code block's width and height instead of scaling
                 // to prevent its content from being squished
-                pair.options = { scale: false, styles: ['width', 'height'] };
+                pair.options = {scale: false, styles: ['width', 'height']};
                 // Lines of code
                 this.findAutoAnimateMatches(pairs, pair.from, pair.to, '.hljs .hljs-ln-code', node => {
                     return node.textContent;
@@ -378,14 +378,14 @@ class AutoAnimate {
     findAutoAnimateMatches(pairs, fromScope, toScope, selector, serializer, animationOptions) {
         let fromMatches = {};
         let toMatches = {};
-        [].slice.call(fromScope.querySelectorAll(selector)).forEach(function(element, i) {
+        [].slice.call(fromScope.querySelectorAll(selector)).forEach(function (element, i) {
             const key = serializer(element);
             if (typeof key === 'string' && key.length) {
                 fromMatches[key] = fromMatches[key] || [];
                 fromMatches[key].push(element);
             }
         });
-        [].slice.call(toScope.querySelectorAll(selector)).forEach(function(element, i) {
+        [].slice.call(toScope.querySelectorAll(selector)).forEach(function (element, i) {
             const key = serializer(element);
             toMatches[key] = toMatches[key] || [];
             toMatches[key].push(element);
@@ -401,7 +401,7 @@ class AutoAnimate {
                     fromElement = fromMatches[key][primaryIndex];
                     fromMatches[key][primaryIndex] = null;
                 }
-                // If there are no matching from-elements at the same index,
+                    // If there are no matching from-elements at the same index,
                 // use the last one.
                 else if (fromMatches[key][secondaryIndex]) {
                     fromElement = fromMatches[key][secondaryIndex];
@@ -421,7 +421,7 @@ class AutoAnimate {
     }
 
     getUnmatchedAutoAnimateElements(rootElement) {
-        return [].slice.call(rootElement.children).reduce(function(result, element) {
+        return [].slice.call(rootElement.children).reduce(function (result, element) {
             const containsAnimatedElements = element.querySelector('[data-auto-animate-target]');
             // The element is unmatched if
             // - It is not an auto-animate target
@@ -437,4 +437,4 @@ class AutoAnimate {
     }
 }
 
-export { AutoAnimate }
+export {AutoAnimate}

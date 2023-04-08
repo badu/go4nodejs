@@ -1,5 +1,6 @@
-import { Deck } from './deck.js';
-import { closest } from './utils.js';
+import {Deck} from './deck.js';
+import {closest} from './utils.js';
+
 class Focus {
     constructor(deck) {
         if (!(deck instanceof Deck)) {
@@ -67,4 +68,4 @@ class Focus {
     }
 }
 
-export { Focus }
+export {Focus}
